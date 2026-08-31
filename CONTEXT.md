@@ -5,16 +5,16 @@ Ynot adds consistent organization across financial transactions without replacin
 ## Language
 
 **Tag**:
-A reusable, user-defined label associated with any number of transactions or splits independently of their spending categories. A transaction or split may have zero or more tags.
+A reusable, user-defined label associated with any number of transactions independently of their spending categories. A transaction may have zero or more tags.
 
 **Transaction**:
-A financial record originating in YNAB. A transaction may be unsplit or composed of multiple splits, and may carry tags independently of its splits.
+A financial record originating in YNAB. A transaction may be unsplit or composed of multiple splits; its tags apply to the transaction as a whole.
 
 **Split**:
-A categorized portion of a transaction. A split may carry tags independently of its containing transaction.
+A categorized portion of a transaction. A split provides transaction context but is not independently taggable.
 
 **Tag Vocabulary**:
 The distinct tags currently present in a single YNAB budget. A tag leaves the vocabulary when its final association is removed.
 
 **Tag Total**:
-The signed total of the amounts associated with a tag. When the same tag is attached to both a transaction and one of its splits, the transaction amount takes precedence and is counted only once.
+The signed total of the transaction amounts associated with a tag.
