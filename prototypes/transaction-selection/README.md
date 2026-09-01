@@ -2,11 +2,13 @@
 
 > THROWAWAY PROTOTYPE — this branch answers issue #4 and is not production code.
 
-Three structurally different parent-only bulk-tagging interactions live on one route:
+Round two keeps the preferred **Find → Review → Apply** journey and compares three denser ways to find parent transactions:
 
-- `?variant=A` — dense transaction register with a sticky action dock
-- `?variant=B` — candidate list with a separate selection cart
-- `?variant=C` — guided Find → Review → Apply flow
+- `?variant=A` — YNAB-like account rail with a compact transaction register
+- `?variant=B` — search-first faceted workbench with a persistent batch tray
+- `?variant=C` — compact register with a detail-on-demand transaction inspector
+
+All variants expose account, category group, category, non-tag memo text, clickable tags, reconciliation status, and signed parent amount. The green palette changes subtly by variant. Geist Sans and Geist Mono are self-hosted from the official `geist@1.7.0` package; its OFL license is included under `assets/`.
 
 Run from the repository root:
 
