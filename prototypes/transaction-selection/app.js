@@ -1,53 +1,108 @@
-// THROWAWAY PROTOTYPE: three dense Find → Review → Apply variants,
-// switchable with ?variant=A|B|C on one route.
+// THROWAWAY PROTOTYPE: three ways to scope history inside one dense,
+// guided Find → Review → Apply experience. Switch with ?variant=A|B|C.
 
-const money = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", signDisplay: "auto" });
+const money = new Intl.NumberFormat("en-GB", {
+  style: "currency",
+  currency: "GBP",
+  signDisplay: "auto",
+});
+
+function makeTransaction(id, date, recent, payee, account, group, category, amount, memo, tags, status, splits = []) {
+  return { id, date, recent, payee, account, group, category, amount, memo, tags, status, splits };
+}
 
 const transactions = [
-  { id: "t1", date: "31 Aug", payee: "Tesco", account: "Current Account", group: "Everyday", category: "Groceries", amount: -72.43, memo: "Weekly shop · Clubcard voucher used", tags: ["Household"], status: "cleared", splits: [{ category: "Groceries", memo: "Food", amount: -55.18 }, { category: "Household", memo: "Cleaning supplies", amount: -17.25 }] },
-  { id: "t2", date: "30 Aug", payee: "Acme Ltd", account: "Current Account", group: "Income", category: "Ready to Assign", amount: 3240, memo: "August payroll", tags: [], status: "reconciled", splits: [] },
-  { id: "t3", date: "29 Aug", payee: "IKEA", account: "Rewards Card", group: "Home", category: "Home improvement", amount: -184.99, memo: "Shelving and fixings for utility room", tags: ["Home-Repair"], status: "cleared", splits: [] },
-  { id: "t4", date: "28 Aug", payee: "Trainline", account: "Rewards Card", group: "Work", category: "Work travel", amount: -86.4, memo: "Client visit to Leeds · reclaim in September", tags: ["Work", "Reimburse"], status: "reconciled", splits: [] },
-  { id: "t5", date: "27 Aug", payee: "IKEA refund", account: "Rewards Card", group: "Home", category: "Home improvement", amount: 42.5, memo: "Returned spare brackets", tags: ["Home-Repair"], status: "uncleared", splits: [] },
-  { id: "t6", date: "26 Aug", payee: "The Fox & Hounds", account: "Joint Account", group: "Everyday", category: "Dining out", amount: -64.2, memo: "Dinner with Alex · waiting on £32.10", tags: ["Social"], status: "cleared", splits: [{ category: "Dining out", memo: "My share", amount: -32.1 }, { category: "Reimbursements", memo: "Alex's share", amount: -32.1 }] },
-  { id: "t7", date: "25 Aug", payee: "Octopus Energy", account: "Joint Account", group: "Bills", category: "Energy", amount: -118.74, memo: "August electricity and gas", tags: ["Household"], status: "reconciled", splits: [] },
-  { id: "t8", date: "24 Aug", payee: "Transfer to savings", account: "Current Account", group: "Transfers", category: "Transfer", amount: -500, memo: "Emergency fund top-up", tags: ["Monthly-Move"], status: "reconciled", splits: [] },
-  { id: "t9", date: "23 Aug", payee: "Boots Pharmacy", account: "Current Account", group: "Quality of life", category: "Health", amount: -23.75, memo: "Prescription · collect repeat next month", tags: [], status: "cleared", splits: [] },
-  { id: "t10", date: "22 Aug", payee: "Landlord", account: "Joint Account", group: "Bills", category: "Rent", amount: -1450, memo: "September rent", tags: ["Household"], status: "reconciled", splits: [] },
-  { id: "t11", date: "21 Aug", payee: "Sainsbury's", account: "Joint Account", group: "Everyday", category: "Groceries", amount: -94.18, memo: "Food shop and birthday card", tags: ["Household", "Birthday"], status: "cleared", splits: [{ category: "Groceries", memo: "Food shop", amount: -89.18 }, { category: "Gifts", memo: "Birthday card", amount: -5 }] },
-  { id: "t12", date: "20 Aug", payee: "Apple", account: "Rewards Card", group: "Bills", category: "Subscriptions", amount: -8.99, memo: "iCloud+ family plan", tags: ["Subscription"], status: "cleared", splits: [] },
-  { id: "t13", date: "19 Aug", payee: "HMRC", account: "Current Account", group: "Income", category: "Ready to Assign", amount: 126.4, memo: "Tax refund", tags: ["Tax"], status: "reconciled", splits: [] },
-  { id: "t14", date: "18 Aug", payee: "Thames Water", account: "Joint Account", group: "Bills", category: "Water", amount: -42.16, memo: "Quarterly direct debit", tags: ["Household"], status: "reconciled", splits: [] },
-  { id: "t15", date: "17 Aug", payee: "Amazon", account: "Rewards Card", group: "Home", category: "Household goods", amount: -31.48, memo: "Light bulbs and picture hooks", tags: ["Home-Repair"], status: "cleared", splits: [] },
-  { id: "t16", date: "16 Aug", payee: "Workshop Coffee", account: "Current Account", group: "Everyday", category: "Dining out", amount: -4.2, memo: "Coffee before the train", tags: ["Work"], status: "cleared", splits: [] },
-  { id: "t17", date: "15 Aug", payee: "Admiral", account: "Current Account", group: "Bills", category: "Insurance", amount: -61.24, memo: "Car insurance monthly premium", tags: [], status: "reconciled", splits: [] },
-  { id: "t18", date: "14 Aug", payee: "Cash withdrawal", account: "Current Account", group: "Everyday", category: "Cash", amount: -40, memo: "Market and parking", tags: [], status: "uncleared", splits: [] },
-  { id: "t19", date: "13 Aug", payee: "Shell", account: "Rewards Card", group: "Transport", category: "Fuel", amount: -68.31, memo: "Full tank before Cornwall", tags: ["Holiday"], status: "cleared", splits: [] },
-  { id: "t20", date: "12 Aug", payee: "Interest", account: "Easy Access Savings", group: "Income", category: "Ready to Assign", amount: 38.12, memo: "Monthly interest", tags: [], status: "reconciled", splits: [] },
-  { id: "t21", date: "11 Aug", payee: "National Trust", account: "Rewards Card", group: "Quality of life", category: "Days out", amount: -15, memo: "Parking at Lanhydrock", tags: ["Holiday"], status: "cleared", splits: [] },
-  { id: "t22", date: "10 Aug", payee: "John Lewis", account: "Joint Account", group: "Home", category: "Household goods", amount: -86, memo: "Replacement bedding", tags: ["Household"], status: "uncleared", splits: [] },
+  makeTransaction("t1", "31 Aug 26", true, "Tesco", "Current Account", "Everyday", "Groceries", -72.43, "Weekly shop · Clubcard voucher used", ["Household"], "cleared", [
+    { category: "Groceries", group: "Everyday", memo: "Food", amount: -55.18 },
+    { category: "Household goods", group: "Home", memo: "Cleaning supplies", amount: -17.25 },
+  ]),
+  makeTransaction("t2", "30 Aug 26", true, "Acme Ltd", "Current Account", "Income", "Ready to Assign", 3240, "August payroll", [], "reconciled"),
+  makeTransaction("t3", "29 Aug 26", true, "IKEA", "Rewards Card", "Home", "Home improvement", -184.99, "Shelving and fixings for utility room", ["Home-Repair"], "cleared"),
+  makeTransaction("t4", "28 Aug 26", true, "Trainline", "Rewards Card", "Work", "Work travel", -86.4, "Client visit to Leeds · reclaim in September", ["Work", "Reimburse"], "reconciled"),
+  makeTransaction("t5", "27 Aug 26", true, "IKEA refund", "Rewards Card", "Home", "Home improvement", 42.5, "Returned spare brackets", ["Home-Repair"], "uncleared"),
+  makeTransaction("t6", "26 Aug 26", true, "The Fox & Hounds", "Joint Account", "Everyday", "Dining out", -96.8, "Dinner with Alex and Sam · I covered the table", ["Social", "Dinner-Fox-2026-08-26"], "cleared", [
+    { category: "Dining out", group: "Everyday", memo: "My share", amount: -46.2 },
+    { category: "Reimbursements", group: "Income", memo: "Alex owes", amount: -32.1, owedBy: "Alex" },
+    { category: "Reimbursements", group: "Income", memo: "Sam owes", amount: -18.5, owedBy: "Sam" },
+  ]),
+  makeTransaction("t7", "25 Aug 26", true, "Octopus Energy", "Joint Account", "Bills", "Energy", -118.74, "August electricity and gas", ["Household"], "reconciled"),
+  makeTransaction("t8", "24 Aug 26", true, "Transfer to savings", "Current Account", "Transfers", "Transfer", -500, "Emergency fund top-up", ["Monthly-Move"], "reconciled"),
+  makeTransaction("t9", "23 Aug 26", true, "Boots Pharmacy", "Current Account", "Quality of life", "Health", -23.75, "Prescription · collect repeat next month", [], "cleared"),
+  makeTransaction("t10", "22 Aug 26", true, "Landlord", "Joint Account", "Bills", "Rent", -1450, "September rent", ["Household"], "reconciled"),
+  makeTransaction("t11", "21 Aug 26", true, "Sainsbury's", "Joint Account", "Everyday", "Groceries", -94.18, "Food shop and birthday card", ["Household", "Birthday"], "cleared", [
+    { category: "Groceries", group: "Everyday", memo: "Food shop", amount: -89.18 },
+    { category: "Gifts", group: "Quality of life", memo: "Birthday card", amount: -5 },
+  ]),
+  makeTransaction("t12", "20 Aug 26", true, "Apple", "Rewards Card", "Bills", "Subscriptions", -8.99, "iCloud+ family plan", ["Subscription"], "cleared"),
+  makeTransaction("t13", "19 Aug 26", true, "HMRC", "Current Account", "Income", "Ready to Assign", 126.4, "Tax refund", ["Tax"], "reconciled"),
+  makeTransaction("t14", "18 Aug 26", true, "Thames Water", "Joint Account", "Bills", "Water", -42.16, "Quarterly direct debit", ["Household"], "reconciled"),
+  makeTransaction("t15", "17 Aug 26", true, "Amazon", "Rewards Card", "Home", "Household goods", -31.48, "Light bulbs and picture hooks", ["Home-Repair"], "cleared"),
+  makeTransaction("t16", "16 Aug 26", true, "Workshop Coffee", "Current Account", "Everyday", "Dining out", -4.2, "Coffee before the train", ["Work"], "cleared"),
+  makeTransaction("t17", "15 Aug 26", true, "Admiral", "Current Account", "Bills", "Insurance", -61.24, "Car insurance monthly premium", [], "reconciled"),
+  makeTransaction("t18", "14 Aug 26", true, "Cash withdrawal", "Current Account", "Everyday", "Cash", -40, "Market and parking", [], "uncleared"),
+  makeTransaction("t19", "13 Aug 26", true, "Shell", "Rewards Card", "Transport", "Fuel", -68.31, "Full tank before Cornwall", ["Cornwall-2026"], "cleared"),
+  makeTransaction("t20", "12 Aug 26", true, "Interest", "Easy Access Savings", "Income", "Ready to Assign", 38.12, "Monthly interest", [], "reconciled"),
+  makeTransaction("t21", "11 Aug 26", true, "National Trust", "Rewards Card", "Quality of life", "Holiday", -15, "Parking at Lanhydrock", ["Cornwall-2026"], "cleared"),
+  makeTransaction("t22", "10 Aug 26", true, "John Lewis", "Joint Account", "Home", "Household goods", -86, "Replacement bedding", ["Household"], "uncleared"),
+  makeTransaction("t23", "09 Aug 26", true, "Sea View Inn", "Rewards Card", "Quality of life", "Holiday", -328, "Three nights in St Ives", ["Cornwall-2026"], "reconciled"),
+  makeTransaction("t24", "08 Aug 26", true, "Eden Project", "Rewards Card", "Quality of life", "Holiday", -71.5, "Admission and parking", ["Cornwall-2026"], "cleared"),
+  makeTransaction("t25", "27 Aug 26", true, "Alex Morgan", "Current Account", "Income", "Reimbursements", 32.1, "Fox and Hounds dinner reimbursement", ["Dinner-Fox-2026-08-26"], "cleared"),
+  makeTransaction("t26", "31 Aug 26", true, "Sam Patel", "Current Account", "Income", "Reimbursements", 18.5, "Fox and Hounds dinner · pending transfer", ["Dinner-Fox-2026-08-26"], "uncleared"),
+  makeTransaction("t27", "12 Apr 26", false, "British Airways", "Rewards Card", "Quality of life", "Holiday", -410, "Flights booked for Cornwall", ["Cornwall-2026"], "reconciled"),
+  makeTransaction("t28", "18 Jan 26", false, "John Lewis", "Joint Account", "Home", "Household goods", -114.5, "Winter duvet", ["Household"], "reconciled"),
+  makeTransaction("t29", "03 Nov 25", false, "The Crown", "Current Account", "Everyday", "Dining out", -82.4, "Birthday dinner", ["Birthday-2025"], "reconciled"),
+  makeTransaction("t30", "16 Jun 24", false, "Cornwall Council", "Current Account", "Quality of life", "Holiday", -6.5, "Beach parking", ["Cornwall-2024"], "reconciled"),
 ];
 
 const accounts = [
-  { name: "All accounts", balance: 13642.67, count: 2418 },
-  { name: "Current Account", balance: 2184.22, count: 834 },
-  { name: "Joint Account", balance: 1360.84, count: 512 },
-  { name: "Rewards Card", balance: -742.08, count: 679 },
-  { name: "Easy Access Savings", balance: 10779.69, count: 361 },
-  { name: "Cash", balance: 60, count: 32 },
+  { name: "All accounts", balance: 13642.67, total: 2418 },
+  { name: "Current Account", balance: 2184.22, total: 834 },
+  { name: "Joint Account", balance: 1360.84, total: 512 },
+  { name: "Rewards Card", balance: -742.08, total: 679 },
+  { name: "Easy Access Savings", balance: 10779.69, total: 361 },
+  { name: "Cash", balance: 60, total: 32 },
 ];
 
+const groupTotals = { Everyday: 421, Income: 174, Home: 286, Work: 94, Bills: 503, Transfers: 188, "Quality of life": 319, Transport: 210 };
+const statusTotals = { uncleared: 143, cleared: 842, reconciled: 1433 };
+const tagTotals = { Household: 184, "Home-Repair": 41, Work: 76, Reimburse: 22, "Cornwall-2026": 9, "Dinner-Fox-2026-08-26": 4 };
+
 const variants = {
-  A: { name: "Compact register", tone: "forest", render: renderCompactRegister },
-  B: { name: "Search workbench", tone: "spruce", render: renderSearchWorkbench },
-  C: { name: "Register + inspector", tone: "fern", render: renderInspectorWorkspace },
+  A: { name: "Recent window", scope: "recent", defaultAccount: "All accounts", render: renderRecentWindow },
+  B: { name: "Active account register", scope: "account", defaultAccount: "Current Account", render: renderAccountRegister },
+  C: { name: "Entire history", scope: "history", defaultAccount: "All accounts", render: renderEntireHistory },
 };
 
 const state = {
-  selected: new Set(["t1", "t3", "t6"]), query: "", account: "All accounts", group: "All groups", status: "all",
-  tagFilter: null, tag: "Home-Repair", variant: getVariant(), step: 1, inspected: "t1",
-  lastAction: "None — refresh resets sample data", appliedTags: new Map(), undoSnapshot: null,
+  variant: getVariant(),
+  step: 1,
+  account: "All accounts",
+  query: "",
+  group: "All groups",
+  status: "all",
+  tagFilters: new Set(),
+  tagOperator: "and",
+  tagToApply: "Cornwall-2026",
+  selected: new Set(["t19", "t21", "t23", "t24"]),
+  inspected: "t19",
+  inspectorTab: "parent",
+  focusTag: "Cornwall-2026",
+  windowDays: "90",
+  accountYear: "all",
+  historyAnchor: "all",
+  reduceTransparency: false,
+  appliedTags: new Map(),
+  undoSnapshot: null,
+  lastAction: "None — refresh resets sample data",
 };
+state.account = variants[state.variant].defaultAccount;
+if (state.variant === "B") {
+  state.selected = new Set(["t25", "t26"]);
+  state.tagToApply = "Dinner-Fox-2026-08-26";
+  state.focusTag = "Dinner-Fox-2026-08-26";
+  state.inspected = "t25";
+}
+if (state.variant === "C") state.selected.add("t27");
 
 const app = document.querySelector("#app");
 const dialog = document.querySelector("#preview-dialog");
@@ -56,200 +111,260 @@ const toast = document.querySelector("#undo-toast");
 const switcher = document.querySelector("#prototype-switcher");
 
 function getVariant() {
-  const candidate = new URLSearchParams(window.location.search).get("variant")?.toUpperCase();
-  return ["A", "B", "C"].includes(candidate) ? candidate : "A";
+  const value = new URLSearchParams(location.search).get("variant")?.toUpperCase();
+  return ["A", "B", "C"].includes(value) ? value : "A";
 }
 
 function esc(value) {
   return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 }
 
-function formatAmount(amount) { return money.format(amount); }
-function normalizedTag(value) { return value.trim().replace(/^#/, "").replace(/\s+/g, "-"); }
-function currentTags(transaction) { return state.appliedTags.get(transaction.id) ?? transaction.tags; }
-function hasTag(transaction, tag) { return currentTags(transaction).some((existing) => existing.toLowerCase() === tag.toLowerCase()); }
-function selectedTransactions() { return transactions.filter((transaction) => state.selected.has(transaction.id)); }
+function formatAmount(value) { return money.format(value); }
+function normalizeTag(value) { return value.trim().replace(/^#/, "").replace(/\s+/g, "-"); }
+function tagsFor(transaction) { return state.appliedTags.get(transaction.id) ?? transaction.tags; }
+function hasTag(transaction, tag) { return tagsFor(transaction).some((item) => item.toLowerCase() === tag.toLowerCase()); }
+function selectedTransactions() { return transactions.filter((item) => state.selected.has(item.id)); }
 
-function filteredTransactions() {
+function inVariantScope(transaction) {
+  if (variants[state.variant].scope === "recent" && state.windowDays !== "all") return transaction.recent;
+  if (variants[state.variant].scope === "account" && state.accountYear !== "all") return transaction.date.endsWith(state.accountYear.slice(-2));
+  if (variants[state.variant].scope === "history" && state.historyAnchor === "Earlier") return !transaction.date.endsWith("26") && !transaction.date.endsWith("25") && !transaction.date.endsWith("24") && !transaction.date.endsWith("23");
+  if (variants[state.variant].scope === "history" && state.historyAnchor !== "all") return transaction.date.endsWith(state.historyAnchor.slice(-2));
+  return true;
+}
+
+function filteredTransactions({ ignore = null } = {}) {
   const query = state.query.trim().toLowerCase();
   return transactions.filter((transaction) => {
-    const tags = currentTags(transaction);
-    const matchesAccount = state.account === "All accounts" || transaction.account === state.account;
-    const matchesGroup = state.group === "All groups" || transaction.group === state.group;
-    const matchesStatus = state.status === "all" || transaction.status === state.status;
-    const matchesTag = !state.tagFilter || tags.some((tag) => tag.toLowerCase() === state.tagFilter.toLowerCase());
-    const haystack = [transaction.payee, transaction.account, transaction.group, transaction.category, transaction.memo, ...tags, ...transaction.splits.flatMap((split) => [split.category, split.memo])].join(" ").toLowerCase();
-    return matchesAccount && matchesGroup && matchesStatus && matchesTag && (!query || haystack.includes(query));
+    if (!inVariantScope(transaction)) return false;
+    const tags = tagsFor(transaction);
+    const accountMatch = ignore === "account" || state.account === "All accounts" || transaction.account === state.account;
+    const groupMatch = ignore === "group" || state.group === "All groups" || transaction.group === state.group || transaction.splits.some((split) => split.group === state.group);
+    const statusMatch = ignore === "status" || state.status === "all" || transaction.status === state.status;
+    const tagMatches = [...state.tagFilters].map((tag) => tags.some((item) => item.toLowerCase() === tag.toLowerCase()));
+    const tagMatch = ignore === "tags" || !tagMatches.length || (state.tagOperator === "and" ? tagMatches.every(Boolean) : tagMatches.some(Boolean));
+    const searchText = [transaction.payee, transaction.account, transaction.group, transaction.category, transaction.memo, ...tags, ...transaction.splits.flatMap((split) => [split.group, split.category, split.memo])].join(" ").toLowerCase();
+    return accountMatch && groupMatch && statusMatch && tagMatch && (!query || searchText.includes(query));
   });
 }
 
-function statusMarkup(status, compact = false) {
-  const values = { reconciled: ["R", "Reconciled"], cleared: ["C", "Cleared"], uncleared: ["U", "Uncleared"] };
-  const [symbol, label] = values[status];
-  return `<span class="status status-${status}" title="${label}" aria-label="${label}"><span>${symbol}</span>${compact ? "" : label}</span>`;
+function statusMarkup(status, withLabel = false) {
+  const labels = { uncleared: "Uncleared", cleared: "Cleared", reconciled: "Reconciled" };
+  const symbol = status === "reconciled" ? '<span class="status-symbol lock" aria-hidden="true"></span>' : `<span class="status-symbol">C</span>`;
+  return `<span class="status status-${status}" title="${labels[status]}" aria-label="${labels[status]}">${symbol}${withLabel ? `<span class="status-label">${labels[status]}</span>` : ""}</span>`;
 }
 
-function tagMarkup(transaction, { clickable = true } = {}) {
-  const tags = currentTags(transaction);
+function tagMarkup(transaction, { interactive = true } = {}) {
+  const tags = tagsFor(transaction);
   if (!tags.length) return '<span class="no-tags">No tags</span>';
   return tags.map((tag) => {
-    const active = state.tagFilter?.toLowerCase() === tag.toLowerCase();
-    return clickable ? `<button class="tag ${active ? "active" : ""}" data-filter-tag="${esc(tag)}" aria-pressed="${active}">#${esc(tag)}</button>` : `<span class="tag">#${esc(tag)}</span>`;
+    const active = [...state.tagFilters].some((item) => item.toLowerCase() === tag.toLowerCase());
+    return interactive
+      ? `<button class="tag ${active ? "active" : ""}" data-tag-filter="${esc(tag)}" aria-pressed="${active}">#${esc(tag)}</button>`
+      : `<span class="tag">#${esc(tag)}</span>`;
   }).join("");
 }
 
-function filterSummary() {
-  const filters = [];
-  if (state.account !== "All accounts") filters.push(state.account);
-  if (state.group !== "All groups") filters.push(state.group);
-  if (state.status !== "all") filters.push(state.status);
-  if (state.tagFilter) filters.push(`#${state.tagFilter}`);
-  if (state.query) filters.push(`“${state.query}”`);
-  return filters;
+function splitCategoryMarkup(transaction) {
+  if (!transaction.splits.length) return `<span class="category-path"><small>${esc(transaction.group)}</small>${esc(transaction.category)}</span>`;
+  const categories = [...new Set(transaction.splits.map((split) => split.category))];
+  return `<span class="category-path split-categories"><small>Split · ${categories.length} categories</small>${categories.map(esc).join(" · ")}</span>`;
 }
 
-function header() {
-  return `<div class="prototype-banner"><strong>Throwaway prototype · issue #4 · round 2</strong><span>22 realistic rows standing in for 2,418 transactions · no YNAB calls</span></div>
-    <header class="app-header"><div class="brand"><span class="brand-mark">Y</span><span><strong>Ynot</strong><small>Personal budget</small></span></div><div class="session-state"><span></span>Connected for this tab · locks in 12:41</div></header>`;
+function activeFilterCount() {
+  return Number(state.account !== "All accounts") + Number(state.group !== "All groups") + Number(state.status !== "all") + state.tagFilters.size + Number(Boolean(state.query));
 }
 
-function stepper() {
-  return `<nav class="journey" aria-label="Batch tagging steps">${[[1, "Find"], [2, "Review"], [3, "Apply"]].map(([number, label]) => `<button class="journey-step ${state.step === number ? "active" : ""}" data-step="${number}" ${number > 1 && !state.selected.size ? "disabled" : ""}><span>${number}</span>${label}</button>`).join("")}</nav>`;
-}
-
-function stateBar() {
+function shell(content, kicker, title, copy) {
   const visible = filteredTransactions();
   const selected = selectedTransactions();
-  const selectedTotal = selected.reduce((total, item) => total + item.amount, 0);
-  return `<div class="state-bar" aria-label="Current prototype state"><span><strong>${visible.length}</strong> matching sample rows</span><span><strong>${selected.length}</strong> selected</span><span><strong>${formatAmount(selectedTotal)}</strong> signed total</span><span>Apply <strong>#${esc(normalizedTag(state.tag) || "—")}</strong></span><span>Last <strong>${esc(state.lastAction)}</strong></span>${filterSummary().length ? `<button data-clear-filters>Clear ${filterSummary().length} filter${filterSummary().length === 1 ? "" : "s"}</button>` : ""}</div>`;
+  return `
+    <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+    <div class="prototype-banner"><strong>Throwaway prototype · issue #4 · round 3</strong><span>History-scope comparison · in-memory sample data · no YNAB calls</span></div>
+    <header class="glass app-header"><div class="brand"><span class="brand-mark">Y</span><span><strong>Ynot</strong><small>Personal budget</small></span></div><div class="header-actions"><button class="transparency-toggle" data-transparency aria-pressed="${state.reduceTransparency}">${state.reduceTransparency ? "Enable glass" : "Reduce transparency"}</button><div class="session-state"><span></span>Connected for this tab · locks in 12:41</div></div></header>
+    <div class="glass-layout">
+      ${facetRail()}
+      <main class="main-workspace">
+        <section class="page-intro"><div><p class="eyebrow">${kicker}</p><h1>${title}</h1><p>${copy}</p></div>${journey()}</section>
+        <div class="state-bar"><span><strong>${visible.length}</strong> matching sample rows</span><span><strong>${selected.length}</strong> selected</span><span><strong>${formatAmount(selected.reduce((sum, item) => sum + item.amount, 0))}</strong> signed total</span><span>Tags <strong>${state.tagFilters.size ? [...state.tagFilters].map((tag) => `#${tag}`).join(` ${state.tagOperator.toUpperCase()} `) : "Any"}</strong></span><span>Last <strong>${esc(state.lastAction)}</strong></span>${activeFilterCount() ? `<button data-clear-filters>Clear ${activeFilterCount()} filters</button>` : ""}</div>
+        ${content}
+      </main>
+    </div>`;
 }
 
-function accountRail() {
-  return `<aside class="account-rail" aria-label="Budget accounts"><div class="rail-title"><strong>Accounts</strong><span>2,418 transactions</span></div>${accounts.map((account) => `<button class="account-link ${state.account === account.name ? "active" : ""}" data-account="${esc(account.name)}"><span><strong>${esc(account.name)}</strong><small>${account.count.toLocaleString("en-GB")} transactions</small></span><span class="mono ${account.balance < 0 ? "negative" : ""}">${formatAmount(account.balance)}</span></button>`).join("")}<div class="rail-note"><strong>Account behaviour to test</strong><span>Does this rail change the active account, or add an account filter?</span></div></aside>`;
+function journey() {
+  return `<nav class="glass journey" aria-label="Batch tagging steps">${[[1, "Find"], [2, "Review"], [3, "Apply"]].map(([number, label]) => `<button class="journey-step ${state.step === number ? "active" : ""}" data-step="${number}" ${number > 1 && !state.selected.size ? "disabled" : ""}><span>${number}</span>${label}</button>`).join("")}</nav>`;
 }
 
-function pageIntro(kicker, title, copy) {
-  return `<section class="page-intro"><div><p class="eyebrow">${kicker}</p><h1>${title}</h1><p>${copy}</p></div>${stepper()}</section>`;
+function facetCount(field, value) {
+  return filteredTransactions({ ignore: field }).filter((transaction) => {
+    if (field === "account") return value === "All accounts" || transaction.account === value;
+    if (field === "group") return transaction.group === value || transaction.splits.some((split) => split.group === value);
+    if (field === "status") return transaction.status === value;
+    if (field === "tags") return hasTag(transaction, value);
+    return true;
+  }).length;
 }
 
-function findControls({ facets = false } = {}) {
-  const groups = ["All groups", ...new Set(transactions.map((item) => item.group))];
-  return `<div class="find-controls ${facets ? "faceted" : ""}"><label class="search-box"><span>⌕</span><input type="search" data-query value="${esc(state.query)}" placeholder="Search payee, account, category, memo or tag" /></label><label><span>Category group</span><select data-group>${groups.map((group) => `<option ${state.group === group ? "selected" : ""}>${esc(group)}</option>`).join("")}</select></label><label><span>Status</span><select data-status><option value="all" ${state.status === "all" ? "selected" : ""}>Any status</option><option value="uncleared" ${state.status === "uncleared" ? "selected" : ""}>Uncleared</option><option value="cleared" ${state.status === "cleared" ? "selected" : ""}>Cleared</option><option value="reconciled" ${state.status === "reconciled" ? "selected" : ""}>Reconciled</option></select></label>${state.tagFilter ? `<button class="active-filter" data-filter-tag="${esc(state.tagFilter)}">#${esc(state.tagFilter)} <span>×</span></button>` : ""}</div>`;
+function facetButton(field, value, label, total, active, content = esc(label)) {
+  const matching = facetCount(field, value);
+  return `<button class="facet ${active ? "active" : ""}" data-facet="${field}" data-value="${esc(value)}" aria-label="${esc(label)} ${matching} of ${total.toLocaleString("en-GB")}" aria-pressed="${active}"><span>${content}</span><small><strong>${matching}</strong> of ${total.toLocaleString("en-GB")}</small></button>`;
 }
 
-function render() {
-  document.body.dataset.tone = variants[state.variant].tone;
+function facetRail() {
+  const popularTags = Object.entries(tagTotals);
+  return `<aside class="glass floating-rail" aria-label="Accounts and transaction filters">
+    <div class="rail-scroll">
+      <section class="rail-section"><div class="rail-heading"><strong>Account</strong><span>One active</span></div>${accounts.map((account) => facetButton("account", account.name, account.name, account.total, state.account === account.name, `<span class="account-name">${esc(account.name)}</span><span class="account-balance ${account.balance < 0 ? "negative" : ""}">${formatAmount(account.balance)}</span>`)).join("")}</section>
+      <section class="rail-section"><div class="rail-heading"><strong>Category groups</strong><span>Matches of total</span></div>${Object.entries(groupTotals).map(([group, total]) => facetButton("group", group, group, total, state.group === group)).join("")}</section>
+      <section class="rail-section"><div class="rail-heading"><strong>Status</strong><span>Matches of total</span></div>${Object.entries(statusTotals).map(([status, total]) => facetButton("status", status, status, total, state.status === status, `${statusMarkup(status, true)}`)).join("")}</section>
+      <section class="rail-section"><div class="rail-heading"><strong>Tags</strong><span>Multi-select</span></div><div class="tag-operator"><button data-tag-operator="and" class="${state.tagOperator === "and" ? "active" : ""}">Match all</button><button data-tag-operator="or" class="${state.tagOperator === "or" ? "active" : ""}">Match any</button></div>${popularTags.map(([tag, total]) => facetButton("tags", tag, tag, total, state.tagFilters.has(tag), `<span class="tag">#${esc(tag)}</span>`)).join("")}</section>
+    </div>
+  </aside>`;
+}
+
+function searchControls(extra = "") {
+  return `<div class="glass search-controls"><label class="search-box"><span>⌕</span><input type="search" data-query value="${esc(state.query)}" placeholder="Search payee, account, category, memo or tag" /></label>${extra}</div>`;
+}
+
+function renderRecentWindow() {
+  const content = state.step === 1 ? recentFind() : decisionStage();
+  return shell(content, "A · Rolling recent window", "Start with what just happened.", "A bounded window keeps the first load small and calm. Older history is an explicit expansion, not an invisible omission.");
+}
+
+function recentFind() {
+  const visible = filteredTransactions();
+  const scopeControl = `<div class="scope-segment" aria-label="Recent date window"><button data-window="90" class="${state.windowDays === "90" ? "active" : ""}">Recent 90 days</button><button data-window="all" class="${state.windowDays === "all" ? "active" : ""}">Include all history</button></div>`;
+  return `${searchControls(scopeControl)}<div class="results-inspector"><section class="content-panel activity-panel"><div class="scope-explainer"><div><p class="eyebrow">Current scope</p><h2>${state.windowDays === "all" ? "All loaded history" : `Last ${state.windowDays} days`}</h2><p>${visible.length} matching sample rows · approximately ${state.windowDays === "30" ? "312" : state.windowDays === "90" ? "728" : state.windowDays === "365" ? "1,846" : "2,418"} transactions in the real budget scope.</p></div>${state.windowDays !== "all" ? '<button class="secondary-button" data-window="all">Include older history</button>' : ""}</div><div class="activity-list">${visible.map(activityRow).join("")}</div>${visible.length ? "" : emptyState()}</section>${inspector()}</div>${batchBar("Review recent selection")}`;
+}
+
+function activityRow(transaction) {
+  const selected = state.selected.has(transaction.id);
+  return `<article class="activity-row ${selected ? "selected" : ""} ${state.inspected === transaction.id ? "focused" : ""}"><input type="checkbox" data-select="${transaction.id}" aria-label="Select ${esc(transaction.payee)}" ${selected ? "checked" : ""}/><div class="row-focus" data-inspect="${transaction.id}" role="button" tabindex="0"><span class="date mono">${transaction.date}</span><span class="payee"><strong>${esc(transaction.payee)}</strong><small>${esc(transaction.memo)}</small></span><span class="category">${splitCategoryMarkup(transaction)}</span><span class="account">${esc(transaction.account)}</span><span class="tag-list">${tagMarkup(transaction)}</span>${statusMarkup(transaction.status)}<span class="amount ${transaction.amount > 0 ? "positive" : ""}">${formatAmount(transaction.amount)}</span></div></article>`;
+}
+
+function renderAccountRegister() {
+  const account = accounts.find((item) => item.name === state.account) ?? accounts[1];
+  const content = state.step === 1 ? accountFind(account) : decisionStage();
+  return shell(content, "B · Complete active-account register", "Open one account. See its whole register.", "The selected account owns the context. Search and facets narrow its complete register without changing accounts or hiding the history boundary.");
+}
+
+function accountFind(account) {
+  const visible = filteredTransactions();
+  const yearControl = `<label class="year-select"><span>Register year</span><select data-account-year><option value="all" ${state.accountYear === "all" ? "selected" : ""}>All years</option><option value="2026" ${state.accountYear === "2026" ? "selected" : ""}>2026</option><option value="2025" ${state.accountYear === "2025" ? "selected" : ""}>2025</option><option value="2024" ${state.accountYear === "2024" ? "selected" : ""}>2024</option></select></label>`;
+  return `<section class="content-panel account-summary"><div><p class="eyebrow">Active account</p><h2>${esc(account.name)}</h2><span>${account.total.toLocaleString("en-GB")} transactions across the complete register</span></div><div><small>Cleared balance</small><strong class="amount ${account.balance < 0 ? "negative" : ""}">${formatAmount(account.balance)}</strong></div></section>${searchControls(yearControl)}<div class="results-inspector"><section class="content-panel register-panel"><div class="register-head"><span>${visible.length} matching sample rows</span><button class="quiet-button" data-select-visible>${visible.length && visible.every((item) => state.selected.has(item.id)) ? "Clear matching" : "Select matching"}</button></div><div class="table-scroll"><table class="dense-table"><thead><tr><th></th><th>Date</th><th>Payee</th><th>Category / split categories</th><th>Memo without tags</th><th>Tags</th><th>Status</th><th>Amount</th></tr></thead><tbody>${visible.map(tableRow).join("")}</tbody></table></div>${visible.length ? "" : emptyState()}</section>${inspector()}</div>${batchBar("Review account selection")}`;
+}
+
+function tableRow(transaction) {
+  const selected = state.selected.has(transaction.id);
+  return `<tr class="${selected ? "selected" : ""} ${state.inspected === transaction.id ? "focused" : ""}"><td><input type="checkbox" data-select="${transaction.id}" aria-label="Select ${esc(transaction.payee)}" ${selected ? "checked" : ""}/></td><td class="mono">${transaction.date}</td><td><button data-inspect="${transaction.id}"><strong>${esc(transaction.payee)}</strong>${transaction.splits.length ? `<small>${transaction.splits.length} splits · parent only</small>` : ""}</button></td><td>${splitCategoryMarkup(transaction)}</td><td class="memo-cell">${esc(transaction.memo)}</td><td><div class="tag-list">${tagMarkup(transaction)}</div></td><td>${statusMarkup(transaction.status)}</td><td class="amount ${transaction.amount > 0 ? "positive" : ""}">${formatAmount(transaction.amount)}</td></tr>`;
+}
+
+function renderEntireHistory() {
+  const content = state.step === 1 ? historyFind() : decisionStage();
+  return shell(content, "C · Entire history navigator", "Search the whole budget through time.", "A virtualised history keeps the global search honest: the time navigator shows where you are, how much is loaded, and what remains outside the rendered window.");
+}
+
+function historyFind() {
+  const visible = filteredTransactions();
+  const years = ["2026", "2025", "2024", "2023", "Earlier", "all"];
+  return `${searchControls(`<div class="history-status"><strong>${visible.length}</strong><span>rendered of 2,418</span></div>`)}<div class="history-grid"><nav class="glass time-rail" aria-label="History position"><p class="eyebrow">Jump through time</p>${years.map((year) => `<button data-history-anchor="${year}" class="${state.historyAnchor === year ? "active" : ""}"><span>${year === "all" ? "All years" : year}</span><small>${year === "2026" ? "1,104" : year === "2025" ? "688" : year === "2024" ? "402" : year === "2023" ? "157" : year === "Earlier" ? "67" : "2,418"}</small></button>`).join("")}<div class="virtual-note"><strong>Virtual window</strong><span>Only rows near this time position would be mounted. Search still covers all 2,418 transactions.</span></div></nav><section class="content-panel virtual-panel"><div class="register-head"><span>Showing ${visible.length} sample rows around ${state.historyAnchor === "all" ? "all years" : state.historyAnchor}</span><button class="quiet-button" data-select-visible>${visible.length && visible.every((item) => state.selected.has(item.id)) ? "Clear matching" : "Select matching"}</button></div><div class="virtual-results">${visible.map(activityRow).join("")}</div>${visible.length ? "" : emptyState()}<div class="virtual-sentinel"><span></span><strong>Older rows load as the viewport approaches</strong><small>Position 1–${visible.length} of 2,418</small></div></section>${inspector()}</div>${batchBar("Review history selection")}`;
+}
+
+function inspector() {
+  const transaction = transactions.find((item) => item.id === state.inspected) ?? filteredTransactions()[0];
+  if (!transaction) return '<aside class="inspector"><div class="empty-state"><strong>No focused transaction</strong><span>Widen the current filters.</span></div></aside>';
+  const focusTag = state.focusTag || tagsFor(transaction)[0] || normalizeTag(state.tagToApply);
+  return `<aside class="inspector"><div class="glass inspector-tabs"><button data-inspector-tab="parent" class="${state.inspectorTab === "parent" ? "active" : ""}">Parent</button><button data-inspector-tab="tag" class="${state.inspectorTab === "tag" ? "active" : ""}">Tag</button></div>${state.inspectorTab === "parent" ? parentInspector(transaction) : tagInspector(focusTag)}</aside>`;
+}
+
+function parentInspector(transaction) {
+  return `<div class="inspector-content"><div class="detail-head"><div><p class="eyebrow">Focused parent</p><h2>${esc(transaction.payee)}</h2></div>${statusMarkup(transaction.status, true)}</div><dl><div><dt>Account</dt><dd>${esc(transaction.account)}</dd></div><div><dt>Category</dt><dd>${splitCategoryMarkup(transaction)}</dd></div><div><dt>Amount</dt><dd class="amount ${transaction.amount > 0 ? "positive" : ""}">${formatAmount(transaction.amount)}</dd></div><div class="memo-detail"><dt>Memo without tags</dt><dd>${esc(transaction.memo)}</dd></div><div><dt>Tags in memo</dt><dd class="tag-list">${tagMarkup(transaction)}</dd></div></dl>${transaction.splits.length ? `<div class="split-context"><strong>${transaction.splits.length} split lines · context only</strong>${transaction.splits.map((split) => `<div><span><strong>${esc(split.group)} › ${esc(split.category)}</strong><small>${esc(split.memo)}${split.owedBy ? ` · owed by ${esc(split.owedBy)}` : ""}</small></span><span class="amount">${formatAmount(split.amount)}</span></div>`).join("")}<p>Tags apply to the full ${formatAmount(transaction.amount)} parent. Split memos remain untouched.</p></div>` : ""}<button class="${state.selected.has(transaction.id) ? "secondary-button" : "primary-button"}" data-select="${transaction.id}">${state.selected.has(transaction.id) ? "Remove from batch" : "Add parent to batch"}</button></div>`;
+}
+
+function tagInspector(tag) {
+  const matches = transactions.filter((item) => hasTag(item, tag));
+  const inflows = matches.filter((item) => item.amount > 0);
+  const outflows = matches.filter((item) => item.amount < 0);
+  const totalIn = inflows.reduce((sum, item) => sum + item.amount, 0);
+  const totalOut = Math.abs(outflows.reduce((sum, item) => sum + item.amount, 0));
+  const clearedMovement = matches.filter((item) => item.status !== "uncleared").reduce((sum, item) => sum + Math.abs(item.amount), 0);
+  const unclearedMovement = matches.filter((item) => item.status === "uncleared").reduce((sum, item) => sum + Math.abs(item.amount), 0);
+  const expected = matches.flatMap((item) => item.splits).filter((split) => split.owedBy).reduce((sum, split) => sum + Math.abs(split.amount), 0);
+  const receivedCleared = inflows.filter((item) => item.status !== "uncleared").reduce((sum, item) => sum + item.amount, 0);
+  const pending = inflows.filter((item) => item.status === "uncleared").reduce((sum, item) => sum + item.amount, 0);
+  return `<div class="inspector-content tag-inspector"><div class="tag-focus-head"><p class="eyebrow">Tag usage across all accounts</p><h2>#${esc(tag)}</h2><span>${matches.length} transactions · independent of the current account and history window</span></div><div class="tag-metrics"><div><small>Total in</small><strong class="positive">${formatAmount(totalIn)}</strong></div><div><small>Total out</small><strong>${formatAmount(totalOut)}</strong></div><div><small>Net</small><strong>${formatAmount(totalIn - totalOut)}</strong></div><div><small>Average spend</small><strong>${formatAmount(outflows.length ? totalOut / outflows.length : 0)}</strong></div><div><small>Cleared + reconciled</small><strong>${formatAmount(clearedMovement)}</strong></div><div><small>Uncleared movement</small><strong>${formatAmount(unclearedMovement)}</strong></div></div>${expected ? `<div class="reimbursement-card"><div><span>Expected reimbursements</span><strong>${formatAmount(expected)}</strong></div><div><span>Received and cleared</span><strong>${formatAmount(receivedCleared)}</strong></div><div><span>Pending</span><strong>${formatAmount(pending)}</strong></div><div class="outstanding"><span>Still due until cleared</span><strong>${formatAmount(Math.max(0, expected - receivedCleared))}</strong></div></div>` : ""}<div class="tag-usage-list">${matches.map((item) => `<button data-inspect="${item.id}" data-parent-tab><span><strong>${esc(item.payee)}</strong><small>${item.date} · ${esc(item.memo)}</small></span>${statusMarkup(item.status)}<span class="amount ${item.amount > 0 ? "positive" : ""}">${formatAmount(item.amount)}</span></button>`).join("")}</div></div>`;
+}
+
+function batchBar(label) {
+  const selected = selectedTransactions();
+  return `<section class="glass batch-bar"><div><strong>${selected.length} selected</strong><span>${selected.filter((item) => item.splits.length).length} with split context · ${formatAmount(selected.reduce((sum, item) => sum + item.amount, 0))}</span></div><label><span>Tag to apply</span><input data-tag-input value="${esc(state.tagToApply)}"/></label><button class="primary-button" data-step="2" ${selected.length ? "" : "disabled"}>${label} →</button></section>`;
+}
+
+function decisionStage() { return state.step === 2 ? reviewStage() : applyStage(); }
+
+function reviewStage() {
+  const selected = selectedTransactions();
+  return `<section class="content-panel decision-stage"><div class="decision-head"><div><p class="eyebrow">Step 2 of 3 · Review</p><h2>Review ${selected.length} parent transactions.</h2><p>The Find state stays intact. Non-tag memo text is visually separated and preserved; split lines are context only.</p></div><label><span>Tag to apply</span><input data-tag-input value="${esc(state.tagToApply)}"/></label></div><div class="review-list">${selected.map((item) => `<article><span><strong>${esc(item.payee)}</strong><small>${item.date} · ${esc(item.account)}</small></span><span>${splitCategoryMarkup(item)}</span><span class="memo-cell">${esc(item.memo)}</span><span class="tag-list">${tagMarkup(item)}</span>${statusMarkup(item.status)}<span class="amount ${item.amount > 0 ? "positive" : ""}">${formatAmount(item.amount)}</span><button data-select="${item.id}" aria-label="Remove ${esc(item.payee)}">×</button></article>`).join("")}</div><footer><button class="secondary-button" data-step="1">← Back to find</button><button class="primary-button" data-step="3" ${state.tagToApply.trim() ? "" : "disabled"}>Preview impact →</button></footer></section>`;
+}
+
+function applyStage() {
+  const selected = selectedTransactions();
+  const tag = normalizeTag(state.tagToApply);
+  const changing = selected.filter((item) => !hasTag(item, tag));
+  return `<section class="content-panel decision-stage"><div class="decision-head"><div><p class="eyebrow">Step 3 of 3 · Apply</p><h2>Apply #${esc(tag)}?</h2><p>Only parent memo tag tokens change. Human memo text and every split memo remain untouched.</p></div></div><div class="impact-grid"><div><strong>${changing.length}</strong><span>will change</span></div><div><strong>${selected.length - changing.length}</strong><span>already tagged</span></div><div><strong>${selected.filter((item) => item.splits.length).length}</strong><span>parents with splits</span></div><div><strong>${formatAmount(selected.reduce((sum, item) => sum + item.amount, 0))}</strong><span>signed parent total</span></div></div><div class="impact-list">${selected.map((item) => `<div><span><strong>${esc(item.payee)}</strong><small>${esc(item.memo)}${item.splits.length ? ` · ${item.splits.length} split lines` : ""}</small></span><span class="tag-list">${tagMarkup(item, { interactive: false })}</span><span class="impact-result ${hasTag(item, tag) ? "muted" : ""}">${hasTag(item, tag) ? "Already tagged" : `Add #${esc(tag)}`}</span><span class="amount ${item.amount > 0 ? "positive" : ""}">${formatAmount(item.amount)}</span></div>`).join("")}</div><footer><button class="secondary-button" data-step="2">← Back to review</button><button class="primary-button" data-apply ${changing.length ? "" : "disabled"}>Apply to ${changing.length} parents</button></footer></section>`;
+}
+
+function emptyState() { return '<div class="empty-state"><strong>No transactions match.</strong><span>Clear or loosen a facet to widen this view.</span></div>'; }
+
+function clearFilters() {
+  state.query = "";
+  state.account = variants[state.variant].defaultAccount;
+  state.group = "All groups";
+  state.status = "all";
+  state.tagFilters.clear();
+}
+
+function bindControls() {
+  document.querySelectorAll("[data-query]").forEach((input) => input.addEventListener("input", () => { state.query = input.value; render(true); }));
+  document.querySelectorAll("[data-facet]").forEach((button) => button.addEventListener("click", () => {
+    const { facet, value } = button.dataset;
+    if (facet === "account") state.account = value;
+    if (facet === "group") state.group = state.group === value ? "All groups" : value;
+    if (facet === "status") state.status = state.status === value ? "all" : value;
+    if (facet === "tags") state.tagFilters.has(value) ? state.tagFilters.delete(value) : state.tagFilters.add(value);
+    render();
+  }));
+  document.querySelectorAll("[data-tag-filter]").forEach((button) => button.addEventListener("click", (event) => { event.stopPropagation(); const tag = button.dataset.tagFilter; state.tagFilters.has(tag) ? state.tagFilters.delete(tag) : state.tagFilters.add(tag); state.focusTag = tag; render(); }));
+  document.querySelectorAll("[data-tag-operator]").forEach((button) => button.addEventListener("click", () => { state.tagOperator = button.dataset.tagOperator; render(); }));
+  document.querySelectorAll("[data-clear-filters]").forEach((button) => button.addEventListener("click", () => { clearFilters(); render(); }));
+  document.querySelectorAll("[data-select]").forEach((control) => control.addEventListener("click", (event) => { event.stopPropagation(); const id = control.dataset.select; state.selected.has(id) ? state.selected.delete(id) : state.selected.add(id); if (!state.selected.size) state.step = 1; render(); }));
+  document.querySelectorAll("[data-select-visible]").forEach((button) => button.addEventListener("click", () => { const visible = filteredTransactions(); const all = visible.length && visible.every((item) => state.selected.has(item.id)); visible.forEach((item) => all ? state.selected.delete(item.id) : state.selected.add(item.id)); render(); }));
+  document.querySelectorAll("[data-inspect]").forEach((button) => button.addEventListener("click", () => { state.inspected = button.dataset.inspect; if (button.hasAttribute("data-parent-tab")) state.inspectorTab = "parent"; render(); }));
+  document.querySelectorAll("[data-inspect][role='button']").forEach((row) => row.addEventListener("keydown", (event) => { if (!["Enter", " "].includes(event.key)) return; event.preventDefault(); state.inspected = row.dataset.inspect; render(); }));
+  document.querySelectorAll("[data-inspector-tab]").forEach((button) => button.addEventListener("click", () => { state.inspectorTab = button.dataset.inspectorTab; if (state.inspectorTab === "tag") { const transaction = transactions.find((item) => item.id === state.inspected); state.focusTag = [...state.tagFilters][0] || tagsFor(transaction)[0] || normalizeTag(state.tagToApply); } render(); }));
+  document.querySelectorAll("[data-window]").forEach((button) => button.addEventListener("click", () => { state.windowDays = button.dataset.window; render(); }));
+  document.querySelectorAll("[data-account-year]").forEach((select) => select.addEventListener("change", () => { state.accountYear = select.value; render(); }));
+  document.querySelectorAll("[data-history-anchor]").forEach((button) => button.addEventListener("click", () => { state.historyAnchor = button.dataset.historyAnchor; render(); }));
+  document.querySelectorAll("[data-transparency]").forEach((button) => button.addEventListener("click", () => { state.reduceTransparency = !state.reduceTransparency; render(); }));
+  document.querySelectorAll("[data-tag-input]").forEach((input) => input.addEventListener("input", () => { state.tagToApply = input.value.replace(/^#/, ""); }));
+  document.querySelectorAll("[data-step]").forEach((button) => button.addEventListener("click", () => { const next = Number(button.dataset.step); if (next > 1 && !state.selected.size) return; if (next === 3 && !state.tagToApply.trim()) return; state.step = next; render(); }));
+  document.querySelector("[data-apply]")?.addEventListener("click", openApplyPreview);
+}
+
+function render(preserveSearchFocus = false) {
+  document.body.classList.toggle("reduce-transparency", state.reduceTransparency);
   app.innerHTML = variants[state.variant].render();
   bindControls();
   renderSwitcher();
-}
-
-function renderCompactRegister() {
-  return `${header()}<div class="app-layout">${accountRail()}<main class="main-workspace">${pageIntro("A · Forest register", "Find quickly. Review deliberately.", "A YNAB-like account rail and an eight-column compact register prioritise scanning thousands of transactions without hiding memo context.")}${stateBar()}${state.step === 1 ? compactFind() : sharedDecisionStage("register-stage")}</main></div>`;
-}
-
-function compactFind() {
-  const visible = filteredTransactions();
-  return `<section class="surface register-surface">${findControls()}<div class="register-actions"><span>Selection persists as you filter.</span><button class="quiet-button" data-select-visible>${visible.length && visible.every((item) => state.selected.has(item.id)) ? "Clear matching" : "Select matching"}</button></div><div class="table-scroll"><table class="dense-table"><thead><tr><th></th><th>Date</th><th>Payee</th><th>Account</th><th>Category group › category</th><th>Memo (non-tag text)</th><th>Tags</th><th>Status</th><th>Amount</th></tr></thead><tbody>${visible.map(denseTableRow).join("")}</tbody></table></div>${visible.length ? "" : emptyState()}</section>${batchFooter("Continue to review")}`;
-}
-
-function denseTableRow(transaction) {
-  const selected = state.selected.has(transaction.id);
-  return `<tr class="${selected ? "selected" : ""}"><td><input type="checkbox" data-select="${transaction.id}" aria-label="Select ${esc(transaction.payee)}" ${selected ? "checked" : ""} /></td><td class="mono nowrap">${transaction.date}</td><td><strong>${esc(transaction.payee)}</strong>${transaction.splits.length ? `<small>${transaction.splits.length} splits · parent only</small>` : ""}</td><td>${esc(transaction.account)}</td><td><span class="category-path"><small>${esc(transaction.group)}</small>${esc(transaction.category)}</span></td><td class="memo-cell">${esc(transaction.memo)}</td><td><div class="tag-list">${tagMarkup(transaction)}</div></td><td>${statusMarkup(transaction.status, true)}</td><td class="amount ${transaction.amount > 0 ? "positive" : ""}">${formatAmount(transaction.amount)}</td></tr>`;
-}
-
-function renderSearchWorkbench() {
-  return `${header()}<main class="search-page">${pageIntro("B · Spruce search workbench", "Search first, then build the batch.", "Accounts become facets instead of navigation, leaving more width for memo text. A persistent batch tray keeps the guided flow visible alongside dense results.")}${stateBar()}${state.step === 1 ? workbenchFind() : sharedDecisionStage("wide-stage")}</main>`;
-}
-
-function workbenchFind() {
-  const visible = filteredTransactions();
-  const groups = [...new Set(transactions.map((item) => item.group))];
-  return `<div class="search-workbench"><aside class="facet-panel surface"><div class="facet-title"><strong>Refine</strong><button data-clear-filters>Reset</button></div><div class="facet-block"><span>Accounts</span>${accounts.map((account) => `<button class="facet ${state.account === account.name ? "active" : ""}" data-account="${esc(account.name)}"><span>${esc(account.name)}</span><small>${account.count.toLocaleString("en-GB")}</small></button>`).join("")}</div><div class="facet-block"><span>Category groups</span>${groups.map((group) => `<button class="facet ${state.group === group ? "active" : ""}" data-group-button="${esc(group)}"><span>${esc(group)}</span><small>${transactions.filter((item) => item.group === group).length}</small></button>`).join("")}</div><div class="facet-block"><span>Reconciliation</span>${["uncleared", "cleared", "reconciled"].map((status) => `<button class="facet ${state.status === status ? "active" : ""}" data-status-button="${status}"><span>${statusMarkup(status)}</span><small>${transactions.filter((item) => item.status === status).length}</small></button>`).join("")}</div></aside><section class="result-panel surface">${findControls({ facets: true })}<div class="result-head"><span>${visible.length} matching rows</span><button class="quiet-button" data-select-visible>${visible.length && visible.every((item) => state.selected.has(item.id)) ? "Clear matching" : "Select matching"}</button></div><div class="compact-results">${visible.map(compactResultRow).join("")}</div>${visible.length ? "" : emptyState()}</section>${batchTray()}</div>`;
-}
-
-function compactResultRow(transaction) {
-  const selected = state.selected.has(transaction.id);
-  return `<article class="compact-row ${selected ? "selected" : ""}"><input type="checkbox" data-select="${transaction.id}" aria-label="Select ${esc(transaction.payee)}" ${selected ? "checked" : ""} /><div class="row-primary"><strong>${esc(transaction.payee)}</strong><span>${esc(transaction.memo)}</span></div><div class="row-category"><strong>${esc(transaction.category)}</strong><span>${esc(transaction.group)} · ${esc(transaction.account)}</span></div><div class="tag-list">${tagMarkup(transaction)}</div>${statusMarkup(transaction.status, true)}<div class="row-date mono">${transaction.date}</div><div class="amount ${transaction.amount > 0 ? "positive" : ""}">${formatAmount(transaction.amount)}</div></article>`;
-}
-
-function batchTray() {
-  const selected = selectedTransactions();
-  return `<aside class="batch-tray surface"><div><p class="eyebrow">Current batch</p><h2>${selected.length} selected</h2><p>Filters never remove items already selected.</p></div><div class="tray-list">${selected.slice(0, 5).map((item) => `<div><span><strong>${esc(item.payee)}</strong><small>${esc(item.account)}</small></span><button data-select="${item.id}" aria-label="Remove ${esc(item.payee)}">×</button></div>`).join("")}${selected.length > 5 ? `<small>+ ${selected.length - 5} more</small>` : ""}</div><label class="tag-field"><span>Tag to apply</span><input data-tag-input value="${esc(state.tag)}" /></label><button class="primary-button" data-step="2" ${selected.length ? "" : "disabled"}>Review batch →</button></aside>`;
-}
-
-function renderInspectorWorkspace() {
-  return `${header()}<div class="app-layout inspector-layout">${accountRail()}<main class="main-workspace">${pageIntro("C · Fern register + inspector", "Keep the list dense. Reveal detail on demand.", "The middle column remains compact while an inspector exposes full memo text, category hierarchy, tags, status, and split context for one focused parent.")}${stateBar()}${state.step === 1 ? inspectorFind() : sharedDecisionStage("inspector-stage")}</main></div>`;
-}
-
-function inspectorFind() {
-  const visible = filteredTransactions();
-  const inspected = transactions.find((item) => item.id === state.inspected) ?? visible[0];
-  return `<div class="inspector-workspace"><section class="surface list-panel">${findControls()}<div class="result-head"><span>${visible.length} matching rows</span><button class="quiet-button" data-select-visible>${visible.length && visible.every((item) => state.selected.has(item.id)) ? "Clear matching" : "Select matching"}</button></div><div class="inspector-list">${visible.map((transaction) => inspectorRow(transaction, inspected?.id)).join("")}</div>${visible.length ? "" : emptyState()}</section>${inspected ? inspectorPanel(inspected) : '<aside class="surface detail-panel"><p>No transaction focused.</p></aside>'}</div>${batchFooter("Review selected parents")}`;
-}
-
-function inspectorRow(transaction, inspectedId) {
-  const selected = state.selected.has(transaction.id);
-  return `<article class="inspector-row ${selected ? "selected" : ""} ${inspectedId === transaction.id ? "focused" : ""}"><input type="checkbox" data-select="${transaction.id}" aria-label="Select ${esc(transaction.payee)}" ${selected ? "checked" : ""} /><button class="inspect-target" data-inspect="${transaction.id}"><span class="mono">${transaction.date}</span><strong>${esc(transaction.payee)}</strong><span>${esc(transaction.category)}</span><span>${esc(transaction.account)}</span>${statusMarkup(transaction.status, true)}<span class="amount ${transaction.amount > 0 ? "positive" : ""}">${formatAmount(transaction.amount)}</span></button></article>`;
-}
-
-function inspectorPanel(transaction) {
-  return `<aside class="surface detail-panel"><div class="detail-head"><div><p class="eyebrow">Focused parent</p><h2>${esc(transaction.payee)}</h2></div>${statusMarkup(transaction.status)}</div><dl><div><dt>Account</dt><dd>${esc(transaction.account)}</dd></div><div><dt>Category</dt><dd>${esc(transaction.group)} <span>›</span> ${esc(transaction.category)}</dd></div><div><dt>Amount</dt><dd class="amount ${transaction.amount > 0 ? "positive" : ""}">${formatAmount(transaction.amount)}</dd></div><div class="memo-detail"><dt>Memo without tags</dt><dd>${esc(transaction.memo)}</dd></div><div><dt>Tags in memo</dt><dd class="tag-list">${tagMarkup(transaction)}</dd></div></dl>${transaction.splits.length ? `<div class="split-context"><strong>${transaction.splits.length} split lines · context only</strong>${transaction.splits.map((split) => `<div><span>${esc(split.category)}<small>${esc(split.memo)}</small></span><span class="amount">${formatAmount(split.amount)}</span></div>`).join("")}<p>The tag still applies to the full ${formatAmount(transaction.amount)} parent memo.</p></div>` : ""}<button class="${state.selected.has(transaction.id) ? "secondary-button" : "primary-button"}" data-select="${transaction.id}">${state.selected.has(transaction.id) ? "Remove from batch" : "Add parent to batch"}</button></aside>`;
-}
-
-function batchFooter(label) {
-  const selected = selectedTransactions();
-  return `<section class="batch-footer surface"><div><strong>${selected.length} selected</strong><span>${selected.filter((item) => item.splits.length).length} with split context · ${formatAmount(selected.reduce((total, item) => total + item.amount, 0))}</span></div><label class="tag-field"><span>Tag</span><input data-tag-input value="${esc(state.tag)}" /></label><button class="primary-button" data-step="2" ${selected.length ? "" : "disabled"}>${label} →</button></section>`;
-}
-
-function sharedDecisionStage(stageClass) { return state.step === 2 ? reviewStage(stageClass) : applyStage(stageClass); }
-
-function reviewStage(stageClass) {
-  const selected = selectedTransactions();
-  return `<section class="surface decision-stage ${stageClass}"><div class="decision-head"><div><p class="eyebrow">Step 2 of 3 · Review</p><h2>Review ${selected.length} parent transactions.</h2><p>Filters stay intact. Split lines are context; tags describe the signed parent amount.</p></div><label class="tag-field"><span>Tag to apply</span><input data-tag-input value="${esc(state.tag)}" /></label></div><div class="review-table"><div class="review-table-head"><span>Parent transaction</span><span>Account</span><span>Category</span><span>Memo (non-tag text)</span><span>Status</span><span>Amount</span><span></span></div>${selected.map(reviewRow).join("")}</div><footer><button class="secondary-button" data-step="1">← Back to find</button><button class="primary-button" data-step="3" ${state.tag.trim() ? "" : "disabled"}>Preview impact →</button></footer></section>`;
-}
-
-function reviewRow(transaction) {
-  return `<div class="review-table-row"><span><strong>${esc(transaction.payee)}</strong>${transaction.splits.length ? `<small>${transaction.splits.length} splits · parent only</small>` : `<div class="tag-list">${tagMarkup(transaction)}</div>`}</span><span>${esc(transaction.account)}</span><span>${esc(transaction.group)} › ${esc(transaction.category)}</span><span>${esc(transaction.memo)}</span><span>${statusMarkup(transaction.status, true)}</span><span class="amount ${transaction.amount > 0 ? "positive" : ""}">${formatAmount(transaction.amount)}</span><button data-select="${transaction.id}" aria-label="Remove ${esc(transaction.payee)}">×</button></div>`;
-}
-
-function applyStage(stageClass) {
-  const selected = selectedTransactions();
-  const tag = normalizedTag(state.tag);
-  const changing = selected.filter((item) => !hasTag(item, tag));
-  const unchanged = selected.length - changing.length;
-  return `<section class="surface decision-stage ${stageClass}"><div class="decision-head"><div><p class="eyebrow">Step 3 of 3 · Apply</p><h2>Apply #${esc(tag || "—")}?</h2><p>This is the last screen before parent memos would change. Existing non-tag memo text and every split memo remain untouched.</p></div></div><div class="impact-grid"><div><strong>${changing.length}</strong><span>will change</span></div><div><strong>${unchanged}</strong><span>already tagged</span></div><div><strong>${selected.filter((item) => item.splits.length).length}</strong><span>parents with splits</span></div><div><strong>${formatAmount(selected.reduce((total, item) => total + item.amount, 0))}</strong><span>signed parent total</span></div></div><div class="impact-list">${selected.map((item) => impactRow(item, tag)).join("")}</div><footer><button class="secondary-button" data-step="2">← Back to review</button><button class="primary-button" data-apply ${changing.length ? "" : "disabled"}>Apply to ${changing.length} parent${changing.length === 1 ? "" : "s"}</button></footer></section>`;
-}
-
-function impactRow(transaction, tag) {
-  const changes = !hasTag(transaction, tag);
-  return `<div><span><strong>${esc(transaction.payee)}</strong><small>${esc(transaction.account)} · ${esc(transaction.memo)}${transaction.splits.length ? ` · ${transaction.splits.length} split lines` : ""}</small></span><span class="tag-list">${tagMarkup(transaction, { clickable: false })}</span><span class="impact-result ${changes ? "" : "muted"}">${changes ? `Add #${esc(tag)}` : "Already tagged"}</span><span class="amount ${transaction.amount > 0 ? "positive" : ""}">${formatAmount(transaction.amount)}</span></div>`;
-}
-
-function emptyState() { return '<div class="empty-state"><strong>No sample rows match.</strong><span>Clear one or more filters to widen this budget search.</span></div>'; }
-
-function bindControls() {
-  document.querySelectorAll("[data-query]").forEach((input) => input.addEventListener("input", (event) => { state.query = event.target.value; render(); const next = document.querySelector("[data-query]"); next?.focus(); next?.setSelectionRange(state.query.length, state.query.length); }));
-  document.querySelectorAll("[data-account]").forEach((button) => button.addEventListener("click", () => { state.account = button.dataset.account; state.step = 1; render(); }));
-  document.querySelectorAll("[data-group]").forEach((select) => select.addEventListener("change", () => { state.group = select.value; render(); }));
-  document.querySelectorAll("[data-group-button]").forEach((button) => button.addEventListener("click", () => { state.group = state.group === button.dataset.groupButton ? "All groups" : button.dataset.groupButton; render(); }));
-  document.querySelectorAll("[data-status]").forEach((select) => select.addEventListener("change", () => { state.status = select.value; render(); }));
-  document.querySelectorAll("[data-status-button]").forEach((button) => button.addEventListener("click", () => { state.status = state.status === button.dataset.statusButton ? "all" : button.dataset.statusButton; render(); }));
-  document.querySelectorAll("[data-filter-tag]").forEach((button) => button.addEventListener("click", () => { const tag = button.dataset.filterTag; state.tagFilter = state.tagFilter?.toLowerCase() === tag.toLowerCase() ? null : tag; state.step = 1; render(); }));
-  document.querySelectorAll("[data-clear-filters]").forEach((button) => button.addEventListener("click", () => { state.query = ""; state.account = "All accounts"; state.group = "All groups"; state.status = "all"; state.tagFilter = null; render(); }));
-  document.querySelectorAll("[data-select]").forEach((control) => control.addEventListener("click", () => { const id = control.dataset.select; state.selected.has(id) ? state.selected.delete(id) : state.selected.add(id); if (!state.selected.size) state.step = 1; render(); }));
-  document.querySelectorAll("[data-select-visible]").forEach((button) => button.addEventListener("click", () => { const visible = filteredTransactions(); const allSelected = visible.length && visible.every((item) => state.selected.has(item.id)); visible.forEach((item) => allSelected ? state.selected.delete(item.id) : state.selected.add(item.id)); render(); }));
-  document.querySelectorAll("[data-inspect]").forEach((button) => button.addEventListener("click", () => { state.inspected = button.dataset.inspect; render(); }));
-  document.querySelectorAll("[data-tag-input]").forEach((input) => input.addEventListener("input", () => { state.tag = input.value.replace(/^#/, ""); }));
-  document.querySelectorAll("[data-step]").forEach((button) => button.addEventListener("click", () => { const next = Number(button.dataset.step); if (next > 1 && !state.selected.size) return; if (next === 3 && !state.tag.trim()) return; state.step = next; render(); }));
-  document.querySelector("[data-apply]")?.addEventListener("click", openApplyPreview);
+  if (preserveSearchFocus) { const input = document.querySelector("[data-query]"); input?.focus(); input?.setSelectionRange(state.query.length, state.query.length); }
 }
 
 function openApplyPreview() {
   const selected = selectedTransactions();
-  const tag = normalizedTag(state.tag);
+  const tag = normalizeTag(state.tagToApply);
   const changing = selected.filter((item) => !hasTag(item, tag));
-  dialogContent.innerHTML = `<div class="dialog-head"><p class="eyebrow">Simulated write confirmation</p><h2 id="preview-title">Apply #${esc(tag)} to ${changing.length} parents?</h2><p>Non-tag memo text is preserved. Split memos are not changed.</p></div><div class="dialog-body"><div class="impact-list">${selected.map((item) => impactRow(item, tag)).join("")}</div></div><div class="dialog-actions"><button class="secondary-button" data-cancel>Cancel</button><button class="primary-button" data-confirm ${changing.length ? "" : "disabled"}>Apply to ${changing.length}</button></div>`;
+  dialogContent.innerHTML = `<div class="dialog-head"><p class="eyebrow">Simulated write confirmation</p><h2 id="preview-title">Apply #${esc(tag)} to ${changing.length} parents?</h2><p>Human memo text is preserved exactly. Split memos are not changed.</p></div><div class="dialog-body"><div class="impact-list">${selected.map((item) => `<div><span><strong>${esc(item.payee)}</strong><small>${esc(item.memo)}</small></span><span class="tag-list">${tagMarkup(item, { interactive: false })}</span><span class="impact-result ${hasTag(item, tag) ? "muted" : ""}">${hasTag(item, tag) ? "Already tagged" : `Add #${esc(tag)}`}</span><span class="amount">${formatAmount(item.amount)}</span></div>`).join("")}</div></div><div class="dialog-actions"><button class="secondary-button" data-cancel>Cancel</button><button class="primary-button" data-confirm ${changing.length ? "" : "disabled"}>Apply to ${changing.length}</button></div>`;
   dialogContent.querySelector("[data-cancel]").addEventListener("click", () => dialog.close());
   dialogContent.querySelector("[data-confirm]").addEventListener("click", () => simulateApply(changing, tag));
   dialog.showModal();
@@ -257,9 +372,16 @@ function openApplyPreview() {
 
 function simulateApply(changing, tag) {
   state.undoSnapshot = new Map(state.appliedTags);
-  changing.forEach((transaction) => state.appliedTags.set(transaction.id, [...currentTags(transaction), tag]));
+  changing.forEach((transaction) => state.appliedTags.set(transaction.id, [...tagsFor(transaction), tag]));
   dialogContent.innerHTML = `<div class="dialog-head"><p class="eyebrow">Simulated write</p><h2 id="preview-title">Updating parent memos…</h2><p>Reconciling ${changing.length} responses before completion.</p></div><div class="dialog-body"><div class="progress-track"><span></span></div><p class="muted-copy">This prototype never contacts YNAB.</p></div>`;
-  window.setTimeout(() => { state.lastAction = `Applied #${tag} to ${changing.length} parents`; dialog.close(); toast.innerHTML = `<span>${esc(state.lastAction)}. Undo exists only in this tab.</span><button data-undo>Undo</button>`; toast.classList.add("visible"); toast.querySelector("[data-undo]").addEventListener("click", () => { state.appliedTags = new Map(state.undoSnapshot); state.lastAction = "Undid previous batch"; toast.classList.remove("visible"); render(); }); render(); }, 750);
+  setTimeout(() => {
+    state.lastAction = `Applied #${tag} to ${changing.length} parents`;
+    dialog.close();
+    toast.innerHTML = `<span>${esc(state.lastAction)}. Undo exists only in this tab.</span><button data-undo>Undo</button>`;
+    toast.classList.add("visible");
+    toast.querySelector("[data-undo]").addEventListener("click", () => { state.appliedTags = new Map(state.undoSnapshot); state.lastAction = "Undid previous batch"; toast.classList.remove("visible"); render(); });
+    render();
+  }, 720);
 }
 
 function renderSwitcher() {
@@ -276,7 +398,30 @@ function cycleVariant(direction) {
   const order = Object.keys(variants);
   const index = order.indexOf(state.variant);
   state.variant = order[(index + direction + order.length) % order.length];
+  state.account = variants[state.variant].defaultAccount;
   state.step = 1;
+  state.query = "";
+  state.group = "All groups";
+  state.status = "all";
+  state.tagFilters.clear();
+  if (state.variant === "A") {
+    state.selected = new Set(["t19", "t21", "t23", "t24"]);
+    state.tagToApply = "Cornwall-2026";
+    state.focusTag = "Cornwall-2026";
+    state.inspected = "t19";
+  }
+  if (state.variant === "B") {
+    state.selected = new Set(["t25", "t26"]);
+    state.tagToApply = "Dinner-Fox-2026-08-26";
+    state.focusTag = "Dinner-Fox-2026-08-26";
+    state.inspected = "t25";
+  }
+  if (state.variant === "C") {
+    state.selected = new Set(["t19", "t21", "t23", "t24", "t27"]);
+    state.tagToApply = "Cornwall-2026";
+    state.focusTag = "Cornwall-2026";
+    state.inspected = "t19";
+  }
   const url = new URL(location.href);
   url.searchParams.set("variant", state.variant);
   history.replaceState({}, "", url);
@@ -287,6 +432,6 @@ window.addEventListener("keydown", (event) => {
   if (!["ArrowLeft", "ArrowRight"].includes(event.key) || event.target.matches("input, textarea, select, [contenteditable='true']")) return;
   cycleVariant(event.key === "ArrowLeft" ? -1 : 1);
 });
-window.addEventListener("popstate", () => { state.variant = getVariant(); render(); });
+window.addEventListener("popstate", () => { state.variant = getVariant(); state.account = variants[state.variant].defaultAccount; render(); });
 dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
 render();
