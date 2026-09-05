@@ -14,7 +14,7 @@ A financial record originating in YNAB. A transaction may be unsplit or composed
 A categorized portion of a transaction. A split provides transaction context but is not independently taggable.
 
 **Active Account**:
-The single YNAB account whose register is currently open. Exactly one account is active at a time, and it bounds which transactions can be found.
+The single YNAB account whose register is currently open. Exactly one account is active at a time, and it bounds which transactions the register browses and searches. It does not bound tags: a tag spans accounts, so tag membership and Tag Totals stay budget-wide.
 
 **Register**:
 The complete, uncut sequence of transactions belonging to the active account. Filters narrow what the register displays but never change which transactions it contains.
