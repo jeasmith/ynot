@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>Ynot — Tag browsing prototype</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <div id="app"></div>
+
+    <dialog id="preview-dialog" aria-labelledby="preview-title">
+      <div id="preview-content"></div>
+    </dialog>
+
+    <div id="undo-toast" class="undo-toast" role="status" aria-live="polite"></div>
+    <nav id="prototype-switcher" class="prototype-switcher" aria-label="Prototype variants"></nav>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
