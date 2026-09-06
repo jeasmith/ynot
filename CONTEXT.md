@@ -22,6 +22,9 @@ The complete, uncut sequence of transactions belonging to the active account. Fi
 **Tag Vocabulary**:
 The distinct tags currently present in a single YNAB budget. A tag leaves the vocabulary when its final association is removed.
 
+**Canonical Spelling**:
+The spelling of a tag that Ynot displays: the spelling carried by the most transactions, with ties broken toward the earliest transaction and then by code point. It is derived from the transactions rather than stored, and governs display only; membership and Tag Totals use the tag's normalized, case-folded identity.
+
 **Vocabulary Warning**:
 An advisory signal that the Tag Vocabulary holds more distinct tags than intended — chiefly two spellings of one idea, and more weakly a tag used only once. A warning describes a suspicion and offers a fix; it never changes a tag on its own.
 
