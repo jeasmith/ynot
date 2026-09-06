@@ -11,7 +11,7 @@ A reusable, user-defined label associated with any number of transactions indepe
 A financial record originating in YNAB. A transaction may be unsplit or composed of multiple splits; its tags apply to the transaction as a whole.
 
 **Split**:
-A categorized portion of a transaction. A split provides transaction context but is not independently taggable.
+A categorized portion of a transaction. A split provides transaction context but is not independently taggable. A tag written into a split's memo associates the whole parent transaction, and because Ynot cannot write a split's memo, that association is read-only.
 
 **Active Account**:
 The single YNAB account whose register is currently open. Exactly one account is active at a time, and it bounds which transactions the register browses and searches. It does not bound tags: a tag spans accounts, so tag membership and Tag Totals stay budget-wide.
@@ -28,5 +28,8 @@ The spelling of a tag that Ynot displays: the spelling carried by the most trans
 **Vocabulary Warning**:
 An advisory signal that the Tag Vocabulary holds more distinct tags than intended — chiefly two spellings of one idea, and more weakly a tag used only once. A warning describes a suspicion and offers a fix; it never changes a tag on its own.
 
+**Tag Association**:
+The relationship that makes a transaction one of a tag's members, present when the tag's identity appears in the transaction's own memo or in any of its split memos. It is a set: repeated occurrences across a transaction form one association contributing once.
+
 **Tag Total**:
-The signed total of the transaction amounts associated with a tag.
+The net signed total of the amounts of the transactions associated with a tag, across every account in the budget and its whole history. It is always displayed with its outflow subtotal, inflow subtotal, and member count, and no filter narrows it.
