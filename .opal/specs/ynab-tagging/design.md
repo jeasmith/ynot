@@ -336,6 +336,10 @@ export interface SpellingUse {
   readonly transactionCount: number;
   /** Transactions carrying this spelling in the parent memo (reachable by respell). */
   readonly parentTransactionCount: number;
+  /** Transactions carrying this spelling in at least one split memo, whether or not the parent also has it. */
+  readonly splitTransactionCount: number;
+  /** Occurrences of this spelling in split memos; these survive a respell. */
+  readonly splitOccurrenceCount: number;
   readonly earliestDate: IsoDate;
 }
 
@@ -377,7 +381,7 @@ export type VocabularyWarning =
   | { kind: 'cleanup'; identity: TagIdentity; tidyableTransactionCount: number; readOnlyTransactionCount: number }
   | { kind: 'singleUse'; identity: TagIdentity };
 
-export interface SpellingChoice { readonly spelling: string; readonly transactionCount: number; readonly parentWritableCount: number; readonly isCanonical: boolean; }
+export interface SpellingChoice { readonly spelling: string; readonly transactionCount: number; readonly parentWritableCount: number; readonly splitTransactionCount: number; readonly remainingInSplitsCount: number; readonly isCanonical: boolean; }
 export interface MergeDirection { readonly keep: TagIdentity; readonly rewrite: TagIdentity; readonly rewritableCount: number; readonly remainingInSplitsCount: number; }
 
 export function nearDuplicateKey(identity: TagIdentity): string; // remove literal '-' and '_'
@@ -391,7 +395,7 @@ export function deriveWarnings(index: TagIndex, dismissed: ReadonlySet<PairKey>)
 - **Near-duplicate Pairs** are every pair of distinct identities that share a nonempty key. A group of three identities yields three pairs, and pair keys sort the two identities by code point (Req 15.1–15.4).
 - **Merge directions** are offered only when `rewritableCount > 0`. When neither direction qualifies, the warning offers an explanation and dismissal only (Req 15.9–15.11).
 - **Cleanup** warnings appear for any memo that repeats a tag or has extra markers. `tidyableTransactionCount` counts sites with `inParent`, and `readOnlyTransactionCount` counts sites with `inSplits` and no `inParent` (Req 14.4, 14.6).
-- **Spelling choices** take `parentWritableCount` from `SpellingUse.parentTransactionCount`, not from the identity-wide `parentMembers`. A transaction with `#tax` in its parent and `#Tax` only in a split is writable for `tax` and read-only for `Tax`.
+- **Spelling choices** take `parentWritableCount` from `SpellingUse.parentTransactionCount`, not from the identity-wide `parentMembers`. A transaction with `#tax` in its parent and `#Tax` only in a split is writable for `tax` and read-only for `Tax`. `splitTransactionCount` and `remainingInSplitsCount` come from the same per-spelling fields. So a spelling carried in both a parent and a split of one transaction still shows the split occurrence that a respell will leave behind (Req 13.4).
 - **Provenance is kept per spelling and per cleanup site** because `deriveWarnings` sees only the index. Identity-wide member sets cannot tell those cases apart.
 
 ### `src/domain/register/register.ts`
@@ -411,7 +415,7 @@ export interface RegisterView {
   readonly matchingCount: number;
   readonly totalCount: number;
   readonly yearIndex: ReadonlyMap<number, number>;  // year → first row index (position, not scope)
-  readonly tagFacetCounts: ReadonlyMap<TagIdentity, number>; // active account only
+  readonly tagFacetCounts: ReadonlyMap<TagIdentity, number>; // active account, after the other filters
   readonly accountCounts: ReadonlyMap<AccountId, { matching: number; total: number }>;
 }
 
@@ -421,7 +425,7 @@ export function filtersChangeClearsSelection(prev: RegisterFilters, next: Regist
 
 - **Search** folds the query and matches it against the folded payee, category, category group and prose memo text of the parent and its splits.
 - **Category and category-group facets** also match split children.
-- **Tag facet counts** count members inside the active account, so clicking a facet shows exactly that many rows (Req 5.4–5.10).
+- **Tag facet counts** are computed against every other active filter. A tag's count is the number of Active Account transactions that carry the tag and match the search, category, category-group and status filters. Under Match all, they must also carry every other selected tag. Under Match any, other selected tags do not narrow the count. So the count always equals the number of rows carrying that tag in the view you get with that tag selected, and with it alone selected when no other tag filter is set (Req 5.4–5.10).
 
 ### `src/domain/memo/rewrite.ts`
 
@@ -524,7 +528,7 @@ export function recheck(change: PlannedChange, plan: OperationPlan, current: Tra
 - **Re-planning**: every plan carries its `PlanRequest`. The store keeps the open preview's plan, and after a merged refresh it calls `replan(state, plan.request)` and compares the result with `planDiffers` (Req 4.6). During an operation, `remainingWork` replans the confirmed request against the latest state. The IDs of changes not in the confirmed scope, for example an exclusion that has since become eligible, are the remaining work. They are never written (Req 16.4–16.5). Undo has no remaining work.
 - **`recheck`** returns `memoChanged` when the current memo differs from `before`. It returns `gone` for a deleted transaction. It returns `eligibilityChanged` when the recomputed `after` would differ, or when a fingerprint field **relevant to the plan** differs (Req 17.1–17.3). Unrelated changes never block the write (Req 17.4):
   - The account is relevant to every kind only as **scope**: whether the transaction is inside `plan.activeAccountId`. Moving a transaction across that boundary changes the preview's outside-account count, or takes a Register selection out of the account it was chosen in, so it is a conflict. Moving it between two other accounts changes neither, so it is ignored.
-  - `amount` is relevant only to a change whose `changesMembership` is true, because only then does the write move the amount into or out of a Tag Total. It is set per change when planning, by comparing the membership computed from `before` with the one computed from `after`, each together with the transaction's split memos. So a remove or delete whose identity survives in a split, a merge onto a transaction already in the target whose source survives in a split, a rename onto a new identity, a respell and a tidy all ignore an amount-only edit. `planUndo` computes it the same way for each restoring change.
+  - `amount` is relevant only to a change whose `changesMembership` is true, because only then does the write move the amount into or out of a Tag Total. It is set per change when planning, by comparing the membership computed from `before` with the one computed from `after`, each together with the transaction's split memos. So a remove or delete whose identity survives in a split, a merge onto a transaction already in the target whose source survives in a split, a respell and a tidy all ignore an amount-only edit. A rename onto a new identity does not: the transaction leaves the source's Tag Total and enters the target's, so `changesMembership` is true and the amount is checked. `planUndo` computes it the same way for each restoring change.
   - `splitTokens` and `subtransactionIds` are compared only for the tokens whose identity the plan touches (the source and, for rename or merge, the target). Those tokens decide `alreadyTagged` and `splitOnly` exclusions, unreachable split counts and spelling counts. This includes a same-identity respelling or marker change in a split memo. A split being added or removed counts only when it adds or removes such a token.
 
 ### `src/ynab/client.ts`
@@ -1042,7 +1046,8 @@ After `disconnect` or `lock`, no reference to the PAT SHALL remain in the store.
 - `parseMemo`: the ADR 0004 example table, Unicode cases (`#Café` composed and decomposed, `#家計。`, `#٣`, `#Ⅻ`, `##Household`, `\#`, `C:\#temp`, `é#tag` in both forms), `#-` as a tag, and `null` or empty memos.
 - `tagIdentity`: `ß`/`ss`, final sigma, Turkic dotted I (not special-cased), full-width versus ASCII and `m²` versus `m2` kept distinct, `ﬁ` folding to `fi`, and the pinned `CASE_FOLDING_UNICODE_VERSION`.
 - `rewrite.ts`: the prototype's `·` regression, removal at start, end and middle, the line-break preference, rename keeping extra markers, merge removing the source occurrence, tidy, and over-length handling.
-- `buildTagIndex`: the ADR 0005 examples (split-only membership, a transfer pair inside a split, closed accounts, unapproved transactions, deleted subtransactions), plus provenance: `#tax` in a parent with `#Tax` only in a split, and `##Tax` only in a split, yield the right `parentTransactionCount` and `CleanupSite` flags. One `#Tax` in the parent plus one in a split raises no repeat cleanup warning.
+- `buildTagIndex`: the ADR 0005 examples (split-only membership, a transfer pair inside a split, closed accounts, unapproved transactions, deleted subtransactions), plus provenance: `#tax` in a parent with `#Tax` only in a split, and `##Tax` only in a split, yield the right `parentTransactionCount`, `splitTransactionCount` and `CleanupSite` flags. `#Tax` in both the parent and a split of one transaction gives `parentTransactionCount` 1 and `splitOccurrenceCount` 1. One `#Tax` in the parent plus one in a split raises no repeat cleanup warning.
+- `buildRegister`: Tag facet counts with search, category, status and other tag filters active under Match all and Match any equal the rows shown for that tag.
 - `deriveWarnings`: ordering, `#Home-Repair`/`#Home_Repair`/`#HomeRepair` producing three pairs, `#Tax`/`#Taxi` not flagged, dismissal isolation, and split-only directions.
 - `plan*` functions: exclusions, outside-account counts, merge detection, and `planUndo` conflicts. `replan` of every `PlanRequest` kind reproduces the original plan on unchanged state. `remainingWork` reports an exclusion that became eligible. `changesMembership` is false for a remove whose identity survives in a split, and `recheck` then ignores an amount-only change, as it does for respell and tidy, but not for an apply, ignores split tokens of untouched identities, and ignores a move between two accounts that are both outside `plan.activeAccountId` while flagging a move across it.
 - `ynab/errors.ts`: status-to-failure classification. `ynab/client.ts`: fetch init, origin assertion and timeout abort.
@@ -1094,7 +1099,7 @@ It is exposed two ways: as a `fetchImpl` for `vp test` integration tests, and as
 ### Manual Release Validation (recorded in `docs/release/v1-validation.md`)
 
 - **Live walkthrough**: against a controlled YNAB test budget, covering history older than a year, closed and tracking accounts, split-borne tags, transfers, unapproved transactions, and a memo with prose and `\#`. Check afterwards in YNAB that approval, cleared status, flags and other fields are unchanged (Req 21.1–21.2).
-- **Screen readers**: VoiceOver on macOS Safari and on iOS Safari, for selection, the preview diff, recovery and undo (Req 21.3).
+- **Screen readers**: VoiceOver on macOS Safari (desktop) and on iOS Safari (phone), each through every core workflow of Req 20.1: connection, Budget choice and switching, Register browsing and filtering, selection including offscreen Select all and the selection-cleared toast announcement, apply and remove, Tag reading, vocabulary management (rename, merge, delete, spelling consistency, tidy, warnings and dismissal), Impact Preview including the exact memo diff, results, recovery (pause, Resume, Verify again) and undo. Axe scans do not count as screen-reader evidence (Req 21.3).
 - **HTTP cache**: in Firefox `about:cache?storage=disk`, confirm there are no `api.ynab.com` entries after API use, after a reload and after Disconnect (Req 21.6).
 - **Recording**: each check is marked as passed, failed or not performed. Simulated fake-YNAB results are never recorded as live-write evidence (Req 21.7).
 
