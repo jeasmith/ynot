@@ -164,7 +164,7 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 
 1. THE application SHALL derive Tag Identity by normalizing tag text to Unicode Normalization Form C (NFC) and then applying Unicode full default case folding (`CaseFolding.txt` statuses C and F, excluding the Turkic T mappings), independent of locale; canonically equivalent precomposed and decomposed text SHALL share an identity, and `#Straße` and `#STRASSE` SHALL share an identity.
 2. THE application SHALL NOT apply compatibility normalization to Tag Identity, so compatibility variants such as full-width `＃ＴＡＸ` and `#TAX`, or the ligature `ﬁ` and `fi`, SHALL remain distinct identities.
-3. THE application SHALL use Tag Identity for membership and totals and SHALL NOT use Canonical Spelling as a separate stored identity.
+3. THE application SHALL use the single Tag Identity contract of criteria 8.1–8.2 in the tag reader, membership, totals, Tag Vocabulary, Vocabulary Warnings, and every writer and SHALL NOT use Canonical Spelling as a separate stored identity.
 4. WHEN choosing Canonical Spelling, THE application SHALL prefer the spelling carried by the greatest number of distinct member Transactions, counting a spelling at most once per Transaction across its parent and split memos.
 5. IF spelling counts tie, THEN THE application SHALL prefer the spelling carried by the earliest Transaction by date, then break any remaining tie by code-point order.
 6. THE derived Canonical Spelling SHALL be independent of API response order and SHALL NOT require stored user preferences or automatic memo rewrites.
