@@ -146,7 +146,7 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 
 #### Acceptance Criteria
 
-1. WHEN parsing a memo, THE tag reader SHALL recognize a candidate `#` only at memo start or after a character outside Unicode general categories `L*` and `N*`, and only when it is not immediately preceded by `\`.
+1. WHEN parsing a memo, THE tag reader SHALL recognize a candidate `#` only at memo start or after a character outside Unicode general categories `L*` and `N*`, and only when it is not immediately preceded by `\`; a combining mark (`M*`) before the `#` SHALL be judged by the base character it modifies, so canonically equivalent memos such as precomposed and decomposed `é#tag` parse identically.
 2. WHEN a candidate begins with additional consecutive `#` markers, THE tag reader SHALL skip those extra markers and read the following non-whitespace run as one candidate tag text.
 3. THE tag reader SHALL end a candidate at the next whitespace or memo end, trim trailing characters of Unicode general categories `Po`, `Pe`, and `Pf`, and then reject an empty result or a result consisting only of Unicode decimal digits (`Nd`).
 4. THE tag reader SHALL preserve dashes (`Pd`), connectors (`Pc`), accents, and other characters not removed by criterion 7.3, without imposing an ASCII tag alphabet or truncating at an unfamiliar character.
@@ -163,7 +163,7 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 #### Acceptance Criteria
 
 1. THE application SHALL derive Tag Identity by normalizing tag text to Unicode Normalization Form C (NFC) and then applying Unicode full default case folding (`CaseFolding.txt` statuses C and F, excluding the Turkic T mappings), independent of locale; canonically equivalent precomposed and decomposed text SHALL share an identity, and `#Straße` and `#STRASSE` SHALL share an identity.
-2. THE application SHALL NOT apply compatibility normalization to Tag Identity, so compatibility variants such as full-width `＃ＴＡＸ` and `#TAX`, or the ligature `ﬁ` and `fi`, SHALL remain distinct identities.
+2. THE application SHALL NOT apply compatibility normalization to Tag Identity, so compatibility variants that case folding does not map, such as full-width `#ＴＡＸ` and `#TAX`, or superscript `#m²` and `#m2`, SHALL remain distinct identities. Where case folding itself maps a compatibility character, as it maps the ligature `ﬁ` to `fi`, the folded result SHALL be the identity.
 3. THE application SHALL use the single Tag Identity contract of criteria 8.1–8.2 in the tag reader, membership, totals, Tag Vocabulary, Vocabulary Warnings, and every writer and SHALL NOT use Canonical Spelling as a separate stored identity.
 4. WHEN choosing Canonical Spelling, THE application SHALL prefer the spelling carried by the greatest number of distinct member Transactions, counting a spelling at most once per Transaction across its parent and split memos.
 5. IF spelling counts tie, THEN THE application SHALL prefer the spelling carried by the earliest Transaction by date, then break any remaining tie by code-point order.
