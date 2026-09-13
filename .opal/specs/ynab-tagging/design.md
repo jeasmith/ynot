@@ -57,7 +57,11 @@ Out of scope, per the requirements: a backend, OAuth, persistence, a service wor
 
 **Outcome**: Deploy the `dist/` output as a static Vercel project on a dedicated subdomain. CSP and security headers are declared in `vercel.json`, and Web Analytics, Speed Insights and the preview toolbar are disabled.
 
-**Reasoning**: The owner already uses Vercel, and `vercel.json` headers are version-controlled beside the code, so tests can check the same header source that production serves (Req 1.5–1.8). `vp preview` reads the same file, so local end-to-end tests run under the production CSP.
+- **Trusted origin**: the production domain assigned in the Vercel project is the only origin for real use. Its exact hostname is deployment configuration, not code (Req 1.5), so nothing in the bundle names it.
+- **Preview deployments** stay enabled for review, but Vercel Deployment Protection (Vercel Authentication) covers every non-production URL, so only the owner can open one. Previews serve the same `vercel.json` headers. The app does not check its own hostname or disable PAT entry on previews.
+- **Aliases**: no custom domain other than the production subdomain is assigned.
+
+**Reasoning**: The owner already uses Vercel, and `vercel.json` headers are version-controlled beside the code, so tests can check the same header source that production serves (Req 1.5–1.8). `vp preview` reads the same file, so local end-to-end tests run under the production CSP. On a preview, the CSP still restricts any PAT to `https://api.ynab.com`. What differs is that a preview runs unmerged branch code, and Deployment Protection keeps anyone other than the owner from reaching it. The privacy explanation already names the deployment account and build pipeline as trusted (Req 1.10). A runtime hostname check was rejected: it would stop live preview testing and add no protection against the deployment account, which could change the check anyway.
 
 **Alternative Options**: Cloudflare Pages, whose `_headers` file injects nothing into pages. It was rejected only because it would add a new account and workflow.
 
@@ -105,9 +109,15 @@ Out of scope, per the requirements: a backend, OAuth, persistence, a service wor
 
 ### Decision 8: Split a batch after a whole-batch rejection
 
-**Outcome**: If a `PATCH` batch returns 400, the engine first confirms with a delta read that nothing landed. It then splits the batch in half and resubmits each half after a fresh conflict check, until single transactions are isolated. An isolated 400 becomes `skipped: rejected` (the length case, Req 12.8) or `failed`.
+**Outcome**: If a `PATCH` batch returns 400, the engine runs a delta verify and classifies each item on its own before splitting anything, the same way it classifies an Unknown Outcome:
 
-**Reasoning**: YNAB documents no per-item failure contract for bulk updates. Without splitting, one over-long memo would fail 49 valid writes and break Req 12.7's promise not to block eligible transactions. The resubmitted items never failed individually and are re-checked against the confirmed preview, so this is not the blind retry that Req 17.8 forbids. One bad item costs about 12 requests.
+- A memo equal to `after` becomes `completed` and leaves the batch.
+- A memo equal to neither `before` nor `after` becomes `skipped: conflictMemo`.
+- Only items still at `before` stay in the batch. The engine splits them in half and resubmits each half after a fresh conflict check, until single transactions are isolated.
+
+An isolated 400 becomes `skipped: rejected` (the length case, Req 12.8) or `failed`.
+
+**Reasoning**: YNAB documents no per-item failure contract for bulk updates, and no all-or-nothing guarantee either. So a rejected batch cannot be assumed to have saved nothing. Classifying each item first keeps confirmed successes (Req 17.7) and never resends an item that already landed. Without splitting, one over-long memo would fail 49 valid writes and break Req 12.7's promise not to block eligible transactions. The resubmitted items never failed individually and are re-checked against the confirmed preview, so this is not the blind retry that Req 17.8 forbids. One bad item costs about 12 requests.
 
 **Alternative Options**: Failing the whole batch and sending everything to Select for review. It is simple, but it turns one bad memo into 50 failures.
 
@@ -210,7 +220,7 @@ Plan (domain) ─▶ Impact Preview ─▶ confirm ─▶ fixed scope
         conflicts → skipped(conflict)
      PATCH remaining items {id, memo, approved}
         200 → verify returned memos; saved ≠ after or missing → delta verify
-        400 → delta verify nothing landed → split (Decision 8)
+        400 → delta verify, classify each item → split only items still at before (Decision 8)
         429 → pause(rateLimited)                       (response received: nothing uncertain)
         network loss / timeout / 5xx → pause(unknownOutcome) → auto delta verify
      pre-read or verify read fails on network loss → pause(connection) (no write in doubt)
@@ -476,12 +486,14 @@ export function recheck(change: PlannedChange, current: Transaction | undefined,
 ### `src/ynab/client.ts`
 
 ```typescript
+export interface RequestOptions { readonly signal?: AbortSignal; }
+
 export interface YnabClient {
-  listPlans(signal?: AbortSignal): Promise<PlanSummary[]>;
-  getAccounts(planId: string, lastKnowledge?: number): Promise<Delta<Account>>;
-  getCategories(planId: string, lastKnowledge?: number): Promise<Delta<CategoryGroupWithCategories>>;
-  getTransactions(planId: string, q: { sinceDate: IsoDate; untilDate?: IsoDate; lastKnowledge?: number }): Promise<Delta<TransactionDetail>>;
-  patchTransactions(planId: string, items: readonly { id: string; memo: string | null; approved: boolean }[]): Promise<SaveTransactionsResponse>;
+  listPlans(opts?: RequestOptions): Promise<PlanSummary[]>;
+  getAccounts(planId: string, q: { lastKnowledge?: number }, opts?: RequestOptions): Promise<Delta<Account>>;
+  getCategories(planId: string, q: { lastKnowledge?: number }, opts?: RequestOptions): Promise<Delta<CategoryGroupWithCategories>>;
+  getTransactions(planId: string, q: { sinceDate: IsoDate; untilDate?: IsoDate; lastKnowledge?: number }, opts?: RequestOptions): Promise<Delta<TransactionDetail>>;
+  patchTransactions(planId: string, items: readonly { id: string; memo: string | null; approved: boolean }[], opts?: RequestOptions): Promise<SaveTransactionsResponse>;
   dispose(): void; // aborts in-flight requests, drops the token
 }
 
@@ -491,7 +503,7 @@ export function createYnabClient(pat: string, opts?: { fetchImpl?: typeof fetch;
 The PAT is captured in a closure and never exposed as a property. Every request:
 
 - asserts `new URL(url).origin === 'https://api.ynab.com'` before attaching `Authorization: Bearer`;
-- is sent with `cache: 'no-store'`, `credentials: 'omit'`, `referrerPolicy: 'no-referrer'`, `mode: 'cors'`, and an `AbortSignal` that combines a 35-second timeout with `dispose` (Req 1.4, 1.11).
+- is sent with `cache: 'no-store'`, `credentials: 'omit'`, `referrerPolicy: 'no-referrer'`, `mode: 'cors'`, and an `AbortSignal` that combines (`AbortSignal.any`) a 35-second timeout, `dispose`, and the caller's `opts.signal` (Req 1.4, 1.11).
 
 Responses are classified in `src/ynab/errors.ts`:
 
@@ -555,6 +567,9 @@ export interface SessionStore {
 
 React reads the store through `useSyncExternalStore`. `BudgetSessionSnapshot` holds the transactions, accounts, categories, `serverKnowledge`, derived `TagIndex` and warnings, register view state, selection, dismissals, `refreshHealth: 'ok' | { paused: YnabFailure }`, the current preview, operation state and undo history. `disconnect` and `lock` replace the snapshot and call `client.dispose()`, which aborts in-flight requests and drops the PAT (Req 2.2–2.3). `switchBudget` replaces only the `BudgetSession`. It keeps the connected `YnabClient`, because the PAT exists only in that client's closure, and aborts the old session's in-flight reads through a per-`BudgetSession` `AbortController` (Req 3.9).
 
+- **Stale-result guard**: every request made for a Budget Session, including the loader's, the Refresh Scheduler's and the write engine's, passes that session's `signal` to the client. Aborting alone is not enough, because a response can already be resolving when the switch happens. So each `BudgetSession` also carries a `generation` number, and the store applies a result (`mergeTransactions`, accounts, categories, load completion) only if that generation is still current. A result from an older generation is discarded.
+- **Scheduler ownership**: the Refresh Scheduler is started for one `BudgetSession`. `switchBudget`, `disconnect` and `lock` call its disposer before the session is replaced, and `switchBudget` starts a new scheduler once the new budget is ready.
+
 - **Selection rules**:
   - `setFilters` and `setActiveAccount` clear the selection when it is nonempty and raise a `selectionCleared` toast event (Req 6.4–6.5).
   - A year jump is not a filter change.
@@ -564,8 +579,21 @@ React reads the store through `useSyncExternalStore`. `BudgetSessionSnapshot` ho
 ### `src/session/refreshScheduler.ts`
 
 ```typescript
-export function startRefreshScheduler(deps: { store; client; now: () => number; setTimer; document: Pick<Document, 'visibilityState' | 'addEventListener'> }): () => void;
+export interface RefreshSchedulerDeps {
+  readonly store: SessionStore;
+  readonly client: YnabClient;
+  readonly signal: AbortSignal;                  // the Budget Session's signal
+  readonly now: () => number;
+  /** Schedules `fn` after `ms`; returns a function that cancels it. */
+  readonly setTimer: (fn: () => void, ms: number) => () => void;
+  readonly document: Pick<Document, 'visibilityState' | 'addEventListener' | 'removeEventListener'>;
+}
+
+/** Returns a disposer. It is idempotent. */
+export function startRefreshScheduler(deps: RefreshSchedulerDeps): () => void;
 ```
+
+- **Disposal**: the disposer removes the `visibilitychange` listener, cancels the pending timer, and marks the scheduler disposed. A disposed scheduler schedules no further checks, and it ignores the result of a check that was already in flight. It also clears its references to `store` and `client`, so an old session's scheduler cannot keep them alive.
 
 - **Cadence**: a check runs every 60 seconds while `visibilityState === 'visible'`, and immediately on `visibilitychange` to visible (Req 4.2–4.3).
 - **During writes**: checks are skipped while an operation is running, and the write engine does its own reads (Req 4.4).
@@ -697,7 +725,7 @@ export interface UndoHistory { readonly entries: readonly HistoryEntry[]; } // n
 }
 ```
 
-- **Vercel project settings**: Web Analytics, Speed Insights and the Vercel Toolbar stay off, and the production domain is a dedicated subdomain set in the Vercel project (Req 1.5–1.6).
+- **Vercel project settings**: Web Analytics, Speed Insights and the Vercel Toolbar stay off. The production domain is a dedicated subdomain set in the Vercel project, and Deployment Protection covers all preview URLs (Decision 2, Req 1.5–1.6).
 - **Build settings** (in `vite.config.ts`, via `defineConfig` from `vite-plus`): `build.modulePreload.polyfill = false`, `build.assetsInlineLimit = 0` (so no `data:` URIs), and self-hosted Geist fonts under `public/fonts/`.
 - **Preview server**: `vite.config.ts` reads the same headers from `vercel.json` into `preview.headers` for `vp preview`, so end-to-end tests run under the production CSP.
 - **Build guard**: `scripts/check-build-csp.ts` runs after `vp build`, both locally and in the Vercel build command, and fails if `dist/index.html` contains inline `<script>` or `<style>`, `on*=` attributes, `style=` attributes, or any absolute URL. It also fails if the JS bundles contain `eval(` or `new Function(`, or if the `vercel.json` CSP differs from the expected constant (Req 1.7–1.8).
@@ -916,7 +944,8 @@ export interface BudgetSession {
 *For any* store state, after `disconnect`, `lock`, or a completed `switchBudget`:
 
 - the snapshot SHALL contain no transactions, memos, tag data, selection, preview, operation, history or dismissals from the previous Budget Session;
-- after `disconnect` or `lock`, the `YnabClient` SHALL be disposed; after `switchBudget`, the same client SHALL remain connected and every in-flight read from the previous Budget Session SHALL be aborted, so its results are never merged into the new session.
+- after `disconnect` or `lock`, the `YnabClient` SHALL be disposed; after `switchBudget`, the same client SHALL remain connected and every in-flight read from the previous Budget Session SHALL be aborted, and no result from the previous Budget Session SHALL be merged into the new one, even one that resolved before the abort;
+- no Refresh Scheduler from the previous Budget Session SHALL run another check.
 
 After `disconnect` or `lock`, no reference to the PAT SHALL remain in the store.
 
@@ -944,7 +973,7 @@ After `disconnect` or `lock`, no reference to the PAT SHALL remain in the store.
 - **401 mid-session**: treat it as a refresh failure whose message explains the token may have been revoked, offering Retry and Disconnect. Writes stay blocked.
 - **404 plan mid-session**: refresh failure, with the message "This budget is no longer available", offering a budget switch and Disconnect.
 - **403 `data_limit_reached`**: refresh or load failure with YNAB's explanation. If it happens during a write, treat it as a failure for that batch. Nothing was saved, and the delta verify confirms it.
-- **Write 400**: verify, then split the batch (Decision 8). An isolated item becomes `skipped: rejected`, and is never trimmed or retried automatically (Req 12.8).
+- **Write 400**: verify and classify each item, then split only the items still at `before` (Decision 8). An isolated item becomes `skipped: rejected`, and is never trimmed or retried automatically (Req 12.8).
 - **Write 429**: pause with reason `rateLimited`. Resume stays available, and YNAB's rolling window decides whether it succeeds (Req 18.5).
 - **Write network loss before a response, 5xx, or client timeout**: pause with reason `unknownOutcome`, then verify automatically. If verification fails, stay paused with Verify again. Writes stay blocked and browsing continues (Req 18.1–18.3, 18.8).
 - **Session ends mid-write** (Disconnect, lock, reload): no wait. The warning copy is shown beforehand where the app controls the trigger (Req 2.6–2.7, 18.9).
@@ -964,7 +993,9 @@ After `disconnect` or `lock`, no reference to the PAT SHALL remain in the store.
 - `deriveWarnings`: ordering, `#Home-Repair`/`#Home_Repair`/`#HomeRepair` producing three pairs, `#Tax`/`#Taxi` not flagged, dismissal isolation, and split-only directions.
 - `plan*` functions: exclusions, outside-account counts, merge detection, and `planUndo` conflicts.
 - `ynab/errors.ts`: status-to-failure classification. `ynab/client.ts`: fetch init, origin assertion and timeout abort.
-- `idleLock` and `refreshScheduler` with fake timers and fake visibility: 60-second cadence, return-to-tab check, write pause, and lock after a hidden period.
+- `idleLock` and `refreshScheduler` with fake timers and fake visibility: 60-second cadence, return-to-tab check, write pause, and lock after a hidden period. For the scheduler, calling the disposer before the next tick removes the visibility listener, cancels the timer, runs no further checks, and drops the result of a check already in flight.
+- `store`: a delayed read from the old Budget Session resolves after `switchBudget` and is not merged, whether it was aborted or had already resolved.
+- `writeEngine`: after a batch returns 400 with some items already saved by the fake YNAB, those items are `completed` and never resent, and only items still at `before` are split.
 
 ### Property-Based Tests (fast-check)
 
@@ -987,7 +1018,7 @@ Arbitraries in `test/arbitraries.ts` generate memos from a weighted alphabet: AS
 This is an in-memory simulator of the endpoints used above. It covers:
 
 - **Data**: plans, accounts, categories and transactions, with `server_knowledge`, delta semantics (including `deleted` records and the one-year default when `since_date` is omitted), 400 for memos over 500 code points, and the `approved` default when omitted.
-- **Fault injection**: latency, 429, 5xx, a timeout after commit, a dropped connection before or after commit, a whole-batch 400, and scripted concurrent external edits.
+- **Fault injection**: latency, 429, 5xx, a timeout after commit, a dropped connection before or after commit, a whole-batch 400, a 400 after some items in the batch were saved, and scripted concurrent external edits.
 
 It is exposed two ways: as a `fetchImpl` for `vp test` integration tests, and as a Playwright `page.route('https://api.ynab.com/**')` handler. No service worker is involved.
 
@@ -1004,7 +1035,7 @@ It is exposed two ways: as a `fetchImpl` for `vp test` integration tests, and as
   - every end-to-end test registers a `securitypolicyviolation` listener and fails on any event;
   - one spec asserts every network request goes to the app origin (assets only, no `Authorization` header and no financial query strings) or to `https://api.ynab.com`;
   - `scripts/check-build-csp.ts` runs in CI after the build;
-  - `scripts/verify-deployment-headers.ts <url>` checks production and preview response headers against `vercel.json` (Req 1.7–1.8, 21.6).
+  - `scripts/verify-deployment-headers.ts <url>` checks production and preview response headers against `vercel.json`. For a protected preview, it sends Vercel's automation bypass secret from an environment variable, never from a committed file (Req 1.7–1.8, 21.6).
 
 ### Manual Release Validation (recorded in `docs/release/v1-validation.md`)
 
