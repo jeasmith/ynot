@@ -711,7 +711,7 @@ export interface WriteEngine {
   - **Cancel with a request in doubt**: when a sent `PATCH` ends in an Unknown Outcome after, or together with, a cancel, the engine still verifies it. Items at `after` become `completed` and items at `before` become `unattempted`. The operation then finishes with `cancelled: true` instead of offering Resume. If verification fails, it stays paused with Verify again only, and finishes cancelled once verification succeeds.
   - **Cancel while paused** with no item `unknown` (`rateLimited`, or `connection` from a failed pre-read) finishes the operation cancelled at once.
   - **Resume** is offered only when `cancelRequested` is false. Unattempted items of a cancelled operation can be written only through Select for review and a fresh preview (Req 17.8).
-- **Finishing is terminal for every item**: whenever the operation enters `finished`, by completing, cancelling or stopping on a kind change, every item still `pending` becomes `unattempted` first. Recorded outcomes are never overwritten. So a finished operation holds no `pending` item, and every unsent item reaches Select for review (Property 17).
+- **No `pending` item survives a pause or a finish**: whenever the operation enters `paused` (any reason) or `finished` (completing, cancelling, or stopping on a kind change), every item still `pending` becomes `unattempted` first. Items in doubt are already `unknown` and stay so. Recorded outcomes are never overwritten. Resume processes `unattempted` items through the usual recheck, as it already does for unknown outcomes verified back to `before`. A finished operation's unattempted items reach Select for review (Property 17).
 - **Finish**: partial success is kept with no rollback (Req 17.7). The engine appends a history entry holding the completed changes, clears the selection, and keeps the results (Req 6.6, 16.6, 17.9).
 - **Retry of failed items**: failed items can be retried only through Select for review, which builds a new plan (Req 6.7, 17.8).
 
@@ -968,7 +968,7 @@ export interface BudgetSession {
 
 ### Property 17: Outcomes partition the scope honestly
 
-*For any* finished or paused operation, every planned transaction SHALL hold exactly one of completed, skipped, failed, unattempted or unknown. A finished operation SHALL hold no `pending` item, and no transition SHALL overwrite a recorded completed, skipped or failed outcome. `completed` SHALL occur only when a server response or delta showed the memo equal to `after`. No automatic rollback write SHALL ever be sent.
+*For any* finished or paused operation, every planned transaction SHALL hold exactly one of completed, skipped, failed, unattempted or unknown. A paused or finished operation SHALL hold no `pending` item, and no transition SHALL overwrite a recorded completed, skipped or failed outcome. `completed` SHALL occur only when a server response or delta showed the memo equal to `after`. No automatic rollback write SHALL ever be sent.
 
 **Validates: Requirements 16.6, 17.6, 17.7, 17.9, 18.2, 18.3**
 
