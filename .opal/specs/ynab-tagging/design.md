@@ -339,11 +339,14 @@ export interface SpellingUse {
   readonly earliestDate: IsoDate;
 }
 
-/** Where a cleanup issue occurs in one transaction. A repeat that spans the parent and a split counts as split-borne. */
+/**
+ * Where a cleanup issue occurs in one transaction. Issues are detected within each memo on its own:
+ * a tag repeats only when one memo holds it twice. One occurrence in the parent plus one in a split is not a repeat.
+ */
 export interface CleanupSite {
   readonly transactionId: TransactionId;
-  readonly inParent: boolean;   // the issue is in the parent memo (tidyable)
-  readonly inSplits: boolean;   // the issue is in a split memo, or spans parent and split (read-only)
+  readonly inParent: boolean;   // the parent memo itself repeats the tag or has extra markers (tidyable)
+  readonly inSplits: boolean;   // some split memo itself repeats the tag or has extra markers (read-only)
 }
 
 export interface TagTotal {
@@ -469,6 +472,16 @@ export interface EligibilityFingerprint {
   readonly subtransactionIds: readonly string[];    // sorted, non-deleted
 }
 
+/** The structured intent a plan was built from, so it can be re-planned without parsing `label`. */
+export type PlanRequest =
+  | { kind: 'apply'; ids: readonly TransactionId[]; spelling: string }
+  | { kind: 'remove'; ids: readonly TransactionId[]; identity: TagIdentity }
+  | { kind: 'rename'; from: TagIdentity; toSpelling: string }   // yields a rename, merge or respell plan
+  | { kind: 'delete'; identity: TagIdentity }
+  | { kind: 'respell'; identity: TagIdentity; keepSpelling: string }
+  | { kind: 'tidy'; identity: TagIdentity }
+  | { kind: 'undo'; entry: HistoryEntry };
+
 export type Exclusion =
   | { reason: 'alreadyTagged'; transactionId: TransactionId }
   | { reason: 'splitOnly'; transactionId: TransactionId; splitOccurrences: number }
@@ -477,7 +490,8 @@ export type Exclusion =
 
 export interface OperationPlan {
   readonly kind: OperationKind;
-  readonly label: string;                       // e.g. "Rename #HomeRepair → #Home-Repair"
+  readonly request: PlanRequest;                // what the user asked for; the input to replan
+  readonly label: string;                       // display only, e.g. "Rename #HomeRepair → #Home-Repair"
   readonly changes: readonly PlannedChange[];
   readonly exclusions: readonly Exclusion[];
   readonly outsideActiveAccountCount: number;
@@ -493,14 +507,22 @@ export function planDelete(state: DomainState, identity: TagIdentity): Operation
 export function planRespell(state: DomainState, identity: TagIdentity, keepSpelling: string): OperationPlan;
 export function planTidy(state: DomainState, identity: TagIdentity): OperationPlan;
 export function planUndo(state: DomainState, entry: HistoryEntry): OperationPlan & { readonly knownConflicts: number };
+/** Dispatches a request to the matching plan* function. */
+export function replan(state: DomainState, request: PlanRequest): OperationPlan;
 export function planDiffers(a: OperationPlan, b: OperationPlan): boolean;
-export function recheck(change: PlannedChange, current: Transaction | undefined, state: DomainState): 'ok' | 'memoChanged' | 'eligibilityChanged' | 'gone';
+/** Transactions a fresh replan would change that the confirmed plan does not contain (Req 16.5). */
+export function remainingWork(confirmed: OperationPlan, state: DomainState): readonly TransactionId[];
+export function recheck(change: PlannedChange, plan: OperationPlan, current: Transaction | undefined, state: DomainState): 'ok' | 'memoChanged' | 'eligibilityChanged' | 'gone';
 ```
 
 - **Apply** excludes transactions that already carry the identity in any memo (Req 12.3).
 - **Remove, rename, merge, delete, respell and tidy** reach only `parentMembers`. Split-only members are listed as exclusions, and surviving split occurrences are counted (Req 9.3–9.5, 13.1, 13.8).
 - **Over-length results** are excluded and never truncated (Req 12.7).
-- **`recheck`** returns `memoChanged` when the current memo differs from `before`. It returns `eligibilityChanged` when the fingerprint differs (including a same-identity respelling or marker change in a split memo, which alters spelling counts and read-only limitations), or when the recomputed `after` would differ. It returns `gone` for a deleted transaction (Req 17.1–17.3).
+- **Re-planning**: every plan carries its `PlanRequest`. The store keeps the open preview's plan, and after a merged refresh it calls `replan(state, plan.request)` and compares the result with `planDiffers` (Req 4.6). During an operation, `remainingWork` replans the confirmed request against the latest state. The IDs of changes not in the confirmed scope, for example an exclusion that has since become eligible, are the remaining work. They are never written (Req 16.4–16.5). Undo has no remaining work.
+- **`recheck`** returns `memoChanged` when the current memo differs from `before`. It returns `gone` for a deleted transaction. It returns `eligibilityChanged` when the recomputed `after` would differ, or when a fingerprint field **relevant to the plan** differs (Req 17.1–17.3). Unrelated changes never block the write (Req 17.4):
+  - `accountId` is relevant to every kind, because the preview counts transactions outside the Active Account.
+  - `amount` is relevant only where the operation changes membership, and so moves amounts in or out of Tag Totals: apply, remove, merge and delete, and an undo of one of those. It is not relevant to rename onto a new identity, respell or tidy, which keep every membership and total.
+  - `splitTokens` and `subtransactionIds` are compared only for the tokens whose identity the plan touches (the source and, for rename or merge, the target). Those tokens decide `alreadyTagged` and `splitOnly` exclusions, unreachable split counts and spelling counts. This includes a same-identity respelling or marker change in a split memo. A split being added or removed counts only when it adds or removes such a token.
 
 ### `src/ynab/client.ts`
 
@@ -621,7 +643,7 @@ export function startRefreshScheduler(deps: RefreshSchedulerDeps): () => void;
 - **During writes**: checks are skipped while an operation is running, and the write engine does its own reads (Req 4.4).
 - **Accounts and categories** refresh every tenth check, on a manual Refresh, or when a delta references an unknown ID (Decision 7).
 - **On failure**, `refreshHealth` becomes `paused` and the UI shows `Updates paused` with Retry. Retry calls `refreshNow`, and success restores `ok` (Req 4.7–4.8).
-- **Open previews**: after a successful merge, an open preview is re-planned. If `planDiffers` is true, the preview is marked stale and confirmation is disabled until the user regenerates it (Req 4.6).
+- **Open previews**: after a successful merge, an open preview is re-planned from its `request` with `replan`. If `planDiffers` is true, the preview is marked stale and confirmation is disabled until the user regenerates it (Req 4.6).
 - **Paused operations**: a paused operation is never restarted (Req 4.9).
 
 ### `src/session/idleLock.ts`
@@ -658,7 +680,7 @@ export interface Operation {
   readonly plan: OperationPlan;                 // fixed scope (Req 16.4)
   readonly outcomes: ReadonlyMap<TransactionId, TxOutcome>;
   readonly state: OperationState;
-  readonly remainingWork: number;               // new matches found later (Req 16.5)
+  readonly remainingWork: readonly TransactionId[]; // from remainingWork(plan, state) after each read (Req 16.5)
 }
 
 export interface WriteEngine {
@@ -912,13 +934,13 @@ export interface BudgetSession {
 
 ### Property 14: The confirmed scope is fixed
 
-*For any* operation and any sequence of deltas received during it, the set of transaction IDs sent in `PATCH` requests SHALL be a subset of the confirmed plan's change IDs. Newly matching transactions SHALL only increase `remainingWork`.
+*For any* operation and any sequence of deltas received during it, the set of transaction IDs sent in `PATCH` requests SHALL be a subset of the confirmed plan's change IDs. Newly matching transactions SHALL appear only in `remainingWork`, which SHALL equal the change IDs of `replan(state, plan.request)` that are not in the confirmed scope.
 
 **Validates: Requirements 16.4, 16.5**
 
 ### Property 15: No write without a passing recheck
 
-*For any* interleaving of external edits in the fake YNAB, a transaction SHALL be included in a `PATCH` only if the immediately preceding pre-read showed its memo equal to `before` and its fingerprint unchanged. Otherwise it SHALL end as `skipped` with the matching reason.
+*For any* interleaving of external edits in the fake YNAB, a transaction SHALL be included in a `PATCH` only if the immediately preceding pre-read showed its memo equal to `before` and no fingerprint field relevant to the plan changed. Otherwise it SHALL end as `skipped` with the matching reason. An amount-only change SHALL NOT skip a respell, tidy or rename onto a new identity.
 
 **Validates: Requirements 17.1, 17.2, 17.3, 4.6**
 
@@ -1014,9 +1036,9 @@ After `disconnect` or `lock`, no reference to the PAT SHALL remain in the store.
 - `parseMemo`: the ADR 0004 example table, Unicode cases (`#Café` composed and decomposed, `#家計。`, `#٣`, `#Ⅻ`, `##Household`, `\#`, `C:\#temp`, `é#tag` in both forms), `#-` as a tag, and `null` or empty memos.
 - `tagIdentity`: `ß`/`ss`, final sigma, Turkic dotted I (not special-cased), full-width versus ASCII and `m²` versus `m2` kept distinct, `ﬁ` folding to `fi`, and the pinned `CASE_FOLDING_UNICODE_VERSION`.
 - `rewrite.ts`: the prototype's `·` regression, removal at start, end and middle, the line-break preference, rename keeping extra markers, merge removing the source occurrence, tidy, and over-length handling.
-- `buildTagIndex`: the ADR 0005 examples (split-only membership, a transfer pair inside a split, closed accounts, unapproved transactions, deleted subtransactions), plus provenance: `#tax` in a parent with `#Tax` only in a split, and `##Tax` only in a split, yield the right `parentTransactionCount` and `CleanupSite` flags.
+- `buildTagIndex`: the ADR 0005 examples (split-only membership, a transfer pair inside a split, closed accounts, unapproved transactions, deleted subtransactions), plus provenance: `#tax` in a parent with `#Tax` only in a split, and `##Tax` only in a split, yield the right `parentTransactionCount` and `CleanupSite` flags. One `#Tax` in the parent plus one in a split raises no repeat cleanup warning.
 - `deriveWarnings`: ordering, `#Home-Repair`/`#Home_Repair`/`#HomeRepair` producing three pairs, `#Tax`/`#Taxi` not flagged, dismissal isolation, and split-only directions.
-- `plan*` functions: exclusions, outside-account counts, merge detection, and `planUndo` conflicts.
+- `plan*` functions: exclusions, outside-account counts, merge detection, and `planUndo` conflicts. `replan` of every `PlanRequest` kind reproduces the original plan on unchanged state. `remainingWork` reports an exclusion that became eligible. `recheck` ignores an amount-only change for respell and tidy but not for apply, and ignores split tokens of untouched identities.
 - `ynab/errors.ts`: status-to-failure classification. `ynab/client.ts`: fetch init, origin assertion and timeout abort.
 - `idleLock` and `refreshScheduler` with fake timers and fake visibility: 60-second cadence, return-to-tab check, write pause, and lock after a hidden period. For the scheduler, calling the disposer before the next tick removes the visibility listener, cancels the timer, runs no further checks, and drops the result of a check already in flight.
 - `store`: a delayed read from the old Budget Session resolves after `switchBudget` and is not merged, whether it was aborted or had already resolved. This holds when switching away from a budget and back again to the same plan, and across a disconnect and reconnect.
