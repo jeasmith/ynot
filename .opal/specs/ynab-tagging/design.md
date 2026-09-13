@@ -494,6 +494,7 @@ export interface OperationPlan {
   readonly label: string;                       // display only, e.g. "Rename #HomeRepair → #Home-Repair"
   readonly changes: readonly PlannedChange[];
   readonly exclusions: readonly Exclusion[];
+  readonly activeAccountId: AccountId;          // the Active Account when planned; scope for outsideActiveAccountCount
   readonly outsideActiveAccountCount: number;
   readonly unreachableSplitOccurrences: number;
   readonly remainsInVocabularyAfter: boolean;   // old spelling/identity survives in splits
@@ -520,7 +521,7 @@ export function recheck(change: PlannedChange, plan: OperationPlan, current: Tra
 - **Over-length results** are excluded and never truncated (Req 12.7).
 - **Re-planning**: every plan carries its `PlanRequest`. The store keeps the open preview's plan, and after a merged refresh it calls `replan(state, plan.request)` and compares the result with `planDiffers` (Req 4.6). During an operation, `remainingWork` replans the confirmed request against the latest state. The IDs of changes not in the confirmed scope, for example an exclusion that has since become eligible, are the remaining work. They are never written (Req 16.4–16.5). Undo has no remaining work.
 - **`recheck`** returns `memoChanged` when the current memo differs from `before`. It returns `gone` for a deleted transaction. It returns `eligibilityChanged` when the recomputed `after` would differ, or when a fingerprint field **relevant to the plan** differs (Req 17.1–17.3). Unrelated changes never block the write (Req 17.4):
-  - `accountId` is relevant to every kind, because the preview counts transactions outside the Active Account.
+  - The account is relevant to every kind only as **scope**: whether the transaction is inside `plan.activeAccountId`. Moving a transaction across that boundary changes the preview's outside-account count, or takes a Register selection out of the account it was chosen in, so it is a conflict. Moving it between two other accounts changes neither, so it is ignored.
   - `amount` is relevant only where the operation changes membership, and so moves amounts in or out of Tag Totals: apply, remove, merge and delete, and an undo of one of those. It is not relevant to rename onto a new identity, respell or tidy, which keep every membership and total.
   - `splitTokens` and `subtransactionIds` are compared only for the tokens whose identity the plan touches (the source and, for rename or merge, the target). Those tokens decide `alreadyTagged` and `splitOnly` exclusions, unreachable split counts and spelling counts. This includes a same-identity respelling or marker change in a split memo. A split being added or removed counts only when it adds or removes such a token.
 
@@ -671,8 +672,8 @@ export type TxOutcome =
 
 export type OperationState =
   | { state: 'running'; batchIndex: number; cancelRequested: boolean }
-  | { state: 'paused'; reason: 'rateLimited' | 'connection' | 'unknownOutcome' }
-  | { state: 'verifying' }
+  | { state: 'paused'; reason: 'rateLimited' | 'connection' | 'unknownOutcome'; cancelRequested: boolean }
+  | { state: 'verifying'; cancelRequested: boolean }
   | { state: 'finished'; cancelled: boolean };
 
 export interface Operation {
@@ -695,7 +696,10 @@ export interface WriteEngine {
 - **Verification**: a transaction is `completed` only when a response or delta shows its memo equal to `after`.
 - **Unknown outcomes**: they trigger an automatic delta verify. A memo equal to `after` becomes `completed`, one equal to `before` becomes `unattempted` and is included on Resume, and anything else becomes `skipped: conflictMemo` (Req 18.1–18.2). If the verify read fails, the items stay `unknown`, and the engine stays paused with Verify again available (Req 18.3).
 - **Pauses**: a 429 pauses the engine with reason `rateLimited`. A network loss on a `PATCH` means the write may have committed, so it pauses as `unknownOutcome` and verifies immediately. A network loss on a read (pre-read or verify) pauses as `connection`, because no write is in doubt. Progress is kept in every case, and Resume runs the verify step first, then rechecks the remaining items (Req 18.1, 18.5–18.7).
-- **Cancel** sets `cancelRequested`. The engine checks it before each pre-read and again immediately before each `PATCH`, so a cancel that arrives during a pre-read sends nothing for that batch, and its items stay `unattempted`. A `PATCH` already sent is awaited and verified, and no further batches are sent (Req 18.4).
+- **Cancel** sets `cancelRequested`, which is carried through `running`, `verifying` and `paused` and is never cleared. The engine checks it before each pre-read and again immediately before each `PATCH`, so a cancel that arrives during a pre-read sends nothing for that batch, and its items stay `unattempted`. A `PATCH` already sent is awaited and verified, and no further batches are sent (Req 18.4).
+  - **Cancel with a request in doubt**: when a sent `PATCH` ends in an Unknown Outcome after, or together with, a cancel, the engine still verifies it. Items at `after` become `completed` and items at `before` become `unattempted`. The operation then finishes with `cancelled: true` instead of offering Resume. If verification fails, it stays paused with Verify again only, and finishes cancelled once verification succeeds.
+  - **Cancel while paused** with nothing in doubt (`rateLimited`, `connection`) finishes the operation cancelled at once.
+  - **Resume** is offered only when `cancelRequested` is false. Unattempted items of a cancelled operation can be written only through Select for review and a fresh preview (Req 17.8).
 - **Finish**: partial success is kept with no rollback (Req 17.7). The engine appends a history entry holding the completed changes, clears the selection, and keeps the results (Req 6.6, 16.6, 17.9).
 - **Retry of failed items**: failed items can be retried only through Select for review, which builds a new plan (Req 6.7, 17.8).
 
@@ -958,7 +962,7 @@ export interface BudgetSession {
 
 ### Property 18: A single writer, and no silent resumption
 
-*For any* event sequence (refresh success, connectivity restored, visibility change), no `PATCH` SHALL be sent while an operation is paused or has unknown outcomes unless `resume` or `verifyAgain` was invoked. At most one operation SHALL exist, and `start` SHALL be rejected while one does. After `cancel`, no `PATCH` SHALL be sent except one already sent, including when the cancel arrives during a pre-read.
+*For any* event sequence (refresh success, connectivity restored, visibility change), no `PATCH` SHALL be sent while an operation is paused or has unknown outcomes unless `resume` or `verifyAgain` was invoked. At most one operation SHALL exist, and `start` SHALL be rejected while one does. After `cancel`, no `PATCH` SHALL be sent except one already sent, including when the cancel arrives during a pre-read, and including after that sent request ends in an Unknown Outcome, is verified, and would otherwise be resumable.
 
 **Validates: Requirements 4.4, 4.9, 18.4, 18.5, 18.6, 18.7, 18.8, 3.10**
 
@@ -1038,7 +1042,7 @@ After `disconnect` or `lock`, no reference to the PAT SHALL remain in the store.
 - `rewrite.ts`: the prototype's `·` regression, removal at start, end and middle, the line-break preference, rename keeping extra markers, merge removing the source occurrence, tidy, and over-length handling.
 - `buildTagIndex`: the ADR 0005 examples (split-only membership, a transfer pair inside a split, closed accounts, unapproved transactions, deleted subtransactions), plus provenance: `#tax` in a parent with `#Tax` only in a split, and `##Tax` only in a split, yield the right `parentTransactionCount` and `CleanupSite` flags. One `#Tax` in the parent plus one in a split raises no repeat cleanup warning.
 - `deriveWarnings`: ordering, `#Home-Repair`/`#Home_Repair`/`#HomeRepair` producing three pairs, `#Tax`/`#Taxi` not flagged, dismissal isolation, and split-only directions.
-- `plan*` functions: exclusions, outside-account counts, merge detection, and `planUndo` conflicts. `replan` of every `PlanRequest` kind reproduces the original plan on unchanged state. `remainingWork` reports an exclusion that became eligible. `recheck` ignores an amount-only change for respell and tidy but not for apply, and ignores split tokens of untouched identities.
+- `plan*` functions: exclusions, outside-account counts, merge detection, and `planUndo` conflicts. `replan` of every `PlanRequest` kind reproduces the original plan on unchanged state. `remainingWork` reports an exclusion that became eligible. `recheck` ignores an amount-only change for respell and tidy but not for apply, ignores split tokens of untouched identities, and ignores a move between two accounts that are both outside `plan.activeAccountId` while flagging a move across it.
 - `ynab/errors.ts`: status-to-failure classification. `ynab/client.ts`: fetch init, origin assertion and timeout abort.
 - `idleLock` and `refreshScheduler` with fake timers and fake visibility: 60-second cadence, return-to-tab check, write pause, and lock after a hidden period. For the scheduler, calling the disposer before the next tick removes the visibility listener, cancels the timer, runs no further checks, and drops the result of a check already in flight.
 - `store`: a delayed read from the old Budget Session resolves after `switchBudget` and is not merged, whether it was aborted or had already resolved. This holds when switching away from a budget and back again to the same plan, and across a disconnect and reconnect.
