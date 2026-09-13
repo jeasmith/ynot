@@ -25,7 +25,7 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 - **Active Account**: The single YNAB account whose Register is open. It bounds discovery, not Tag membership or Tag Totals.
 - **Register**: The complete, uncut sequence of Transactions belonging to the Active Account. Filters narrow its display, not its underlying history.
 - **Tag Vocabulary**: The distinct Tags present in one Budget. A Tag leaves the vocabulary when its final association is removed.
-- **Tag Identity**: The tag text normalized and then case-folded for membership comparisons, distinct from its display spelling.
+- **Tag Identity**: The tag text in Unicode Normalization Form C (NFC), then case-folded with Unicode full default case folding, used for membership comparisons and distinct from its display spelling.
 - **Canonical Spelling**: The spelling carried by the most distinct Transactions, with ties broken toward the earliest Transaction and then by code point. It is derived, governs display only, and does not change Tag Identity.
 - **Tag Association**: Set membership created when a Tag Identity appears in a Transaction's own memo or any of its non-deleted split memos. Repetitions contribute once.
 - **Tag Total**: The net signed sum of member Transaction amounts across every account and all history, always displayed with outflow subtotal, inflow subtotal, and member count.
@@ -159,12 +159,13 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 
 #### Acceptance Criteria
 
-1. THE application SHALL derive Tag Identity by Unicode normalization followed by case folding; canonically equivalent precomposed and decomposed text SHALL share an identity.
-2. THE application SHALL use Tag Identity for membership and totals and SHALL NOT use Canonical Spelling as a separate stored identity.
-3. WHEN choosing Canonical Spelling, THE application SHALL prefer the spelling carried by the greatest number of distinct member Transactions, counting a spelling at most once per Transaction across its parent and split memos.
-4. IF spelling counts tie, THEN THE application SHALL prefer the spelling carried by the earliest Transaction by date, then break any remaining tie by code-point order.
-5. THE derived Canonical Spelling SHALL be independent of API response order and SHALL NOT require stored user preferences or automatic memo rewrites.
-6. WHEN the underlying Transactions change, THE displayed Canonical Spelling SHALL be allowed to change according to the same rule without changing Tag Identity.
+1. THE application SHALL derive Tag Identity by normalizing tag text to Unicode Normalization Form C (NFC) and then applying Unicode full default case folding (`CaseFolding.txt` statuses C and F, excluding the Turkic T mappings), independent of locale; canonically equivalent precomposed and decomposed text SHALL share an identity, and `#Straße` and `#STRASSE` SHALL share an identity.
+2. THE application SHALL NOT apply compatibility normalization to Tag Identity, so compatibility variants such as full-width `＃ＴＡＸ` and `#TAX`, or the ligature `ﬁ` and `fi`, SHALL remain distinct identities.
+3. THE application SHALL use Tag Identity for membership and totals and SHALL NOT use Canonical Spelling as a separate stored identity.
+4. WHEN choosing Canonical Spelling, THE application SHALL prefer the spelling carried by the greatest number of distinct member Transactions, counting a spelling at most once per Transaction across its parent and split memos.
+5. IF spelling counts tie, THEN THE application SHALL prefer the spelling carried by the earliest Transaction by date, then break any remaining tie by code-point order.
+6. THE derived Canonical Spelling SHALL be independent of API response order and SHALL NOT require stored user preferences or automatic memo rewrites.
+7. WHEN the underlying Transactions change, THE displayed Canonical Spelling SHALL be allowed to change according to the same rule without changing Tag Identity.
 
 ### Requirement 9: Membership and read-only split associations
 
@@ -232,10 +233,11 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 1. THE application SHALL support global rename and delete across eligible parent memos in the whole Budget, regardless of the Active Account or Register filters.
 2. WHEN a rename targets an existing Tag Identity, THE application SHALL treat it as a merge and explicitly describe it as such before confirmation.
 3. WHEN a merge creates overlapping membership, THE resulting membership and totals SHALL remain set-based rather than double-count Transactions that carried both Tags.
-4. THE application SHALL provide an explicit spelling-consistency action for variants of the same Tag Identity without making ordinary apply operations rewrite those variants.
-5. WHEN the user chooses to tidy repeated tag occurrences or extra consecutive markers, THE application SHALL preview the parent-memo cleanup as one operation and preserve membership and totals.
-6. THE application SHALL confirm one management operation at a time and SHALL NOT stage multiple independent operations under one combined preview in v1.
-7. THE global writer SHALL preserve unrelated memo text and obey the same fit, split-read-only, preview, conflict, recovery, and undo rules as other tagging operations.
+4. WHEN a Tag Identity has more than one spelling, THE application SHALL provide an explicit spelling-consistency action that lists every spelling with its Transaction count and read-only limitations, marks the Canonical Spelling without preselecting it, and requires the user to choose the spelling to keep.
+5. WHEN the user confirms a spelling-consistency action, THE writer SHALL rewrite parent-memo occurrences of the other spellings to the chosen spelling, and the preview SHALL explain any occurrences that remain in split memos; ordinary apply operations SHALL NOT rewrite variant spellings.
+6. WHEN the user chooses to tidy repeated tag occurrences or extra consecutive markers, THE application SHALL preview the parent-memo cleanup as one operation and preserve membership and totals.
+7. THE application SHALL confirm one management operation at a time and SHALL NOT stage multiple independent operations under one combined preview in v1.
+8. THE global writer SHALL preserve unrelated memo text and obey the same fit, split-read-only, preview, conflict, recovery, and undo rules as other tagging operations.
 
 ### Requirement 14: Advisory Vocabulary Warnings
 
@@ -384,4 +386,4 @@ The requirements above are the draft contract. These links preserve the rational
 | [Safe write, conflict, and recovery resolution](https://github.com/jeasmith/ynot/issues/9#issuecomment-5559857802) | 4, 12–13, 16–19, 21 |
 | [First-version acceptance boundary](https://github.com/jeasmith/ynot/issues/10#issuecomment-5559965626) | 3–6, 16, 18–22 |
 | [Near-duplicate resolution](https://github.com/jeasmith/ynot/issues/17#issuecomment-5560026583) | 14–15, 22 |
-| Owner clarifications during requirements review, 2026-09-13: undo confirms a summary rather than a full preview; a second write is blocked, not queued; selection stays Register-only | 6, 16, 18–19, 22 |
+| Owner clarifications during requirements review, 2026-09-13: undo confirms a summary rather than a full preview; a second write is blocked, not queued; selection stays Register-only; Tag Identity is NFC plus full default case folding; the user chooses the spelling a consistency fix keeps | 6, 8, 13, 16, 18–19, 22 |
