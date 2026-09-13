@@ -227,7 +227,8 @@ Plan (domain) ─▶ Impact Preview ─▶ confirm ─▶ fixed scope
         400 → delta verify, classify each item → split only items still at before (Decision 8)
         429 → pause(rateLimited)                       (response received: nothing uncertain)
         network loss / timeout / 5xx → pause(unknownOutcome) → auto delta verify
-     pre-read or verify read fails on network loss → pause(connection) (no write in doubt)
+     pre-read fails → pause(connection)                (nothing sent in this batch: no write in doubt)
+     verify read after a sent PATCH fails → pause(unknownOutcome); unconfirmed items stay unknown
   final delta verify → results → undo history entry → clear selection
 ```
 
@@ -703,10 +704,10 @@ export interface WriteEngine {
 - **Batch loop**: the engine follows the write flow above. The payload for each item is `{ id, memo: after, approved: current.approved }`, where `current` is the pre-read snapshot. No `subtransactions` field is ever sent (Req 17.4–17.5).
 - **Verification**: a transaction is `completed` only when a response or delta shows its memo equal to `after`.
 - **Unknown outcomes**: they trigger an automatic delta verify. A memo equal to `after` becomes `completed`, one equal to `before` becomes `unattempted` and is included on Resume, and anything else becomes `skipped: conflictMemo` (Req 18.1–18.2). If the verify read fails, the items stay `unknown`, and the engine stays paused with Verify again available (Req 18.3).
-- **Pauses**: a 429 pauses the engine with reason `rateLimited`. A network loss on a `PATCH` means the write may have committed, so it pauses as `unknownOutcome` and verifies immediately. A network loss on a read (pre-read or verify) pauses as `connection`, because no write is in doubt. Progress is kept in every case, and Resume runs the verify step first, then rechecks the remaining items (Req 18.1, 18.5–18.7).
+- **Pauses**: a 429 pauses the engine with reason `rateLimited`. A network loss on a `PATCH` means the write may have committed, so it pauses as `unknownOutcome` and verifies immediately. A failed pre-read pauses as `connection`, because nothing in that batch has been sent. A failed verify read that follows a sent `PATCH` (after a 200 with a missing or different memo, a 400, or an uncertain failure) pauses as `unknownOutcome`, with every item it has not confirmed still `unknown`, because those writes may have committed. The reason depends on whether any sent item is unconfirmed, not on which request failed. So Cancel while paused finishes at once only when nothing is `unknown`; otherwise it waits for Verify again (Req 18.3–18.4). Progress is kept in every case, and Resume runs the verify step first, then rechecks the remaining items (Req 18.1, 18.5–18.7).
 - **Cancel** sets `cancelRequested`, which is carried through `running`, `verifying` and `paused` and is never cleared. The engine checks it before each pre-read and again immediately before each `PATCH`, so a cancel that arrives during a pre-read sends nothing for that batch, and its items stay `unattempted`. A `PATCH` already sent is awaited and verified, and no further batches are sent (Req 18.4).
   - **Cancel with a request in doubt**: when a sent `PATCH` ends in an Unknown Outcome after, or together with, a cancel, the engine still verifies it. Items at `after` become `completed` and items at `before` become `unattempted`. The operation then finishes with `cancelled: true` instead of offering Resume. If verification fails, it stays paused with Verify again only, and finishes cancelled once verification succeeds.
-  - **Cancel while paused** with nothing in doubt (`rateLimited`, `connection`) finishes the operation cancelled at once.
+  - **Cancel while paused** with no item `unknown` (`rateLimited`, or `connection` from a failed pre-read) finishes the operation cancelled at once.
   - **Resume** is offered only when `cancelRequested` is false. Unattempted items of a cancelled operation can be written only through Select for review and a fresh preview (Req 17.8).
 - **Finish**: partial success is kept with no rollback (Req 17.7). The engine appends a history entry holding the completed changes, clears the selection, and keeps the results (Req 6.6, 16.6, 17.9).
 - **Retry of failed items**: failed items can be retried only through Select for review, which builds a new plan (Req 6.7, 17.8).
