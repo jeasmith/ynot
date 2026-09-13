@@ -111,6 +111,7 @@ Out of scope, per the requirements: a backend, OAuth, persistence, a service wor
 
 **Outcome**: If a `PATCH` batch returns 400, the engine runs a delta verify and classifies each item on its own before splitting anything, the same way it classifies an Unknown Outcome:
 
+- A transaction the delta marks `deleted` becomes `skipped: gone` and leaves the batch. This is checked first, because the merge removes it and it has no memo to compare.
 - A memo equal to `after` becomes `completed` and leaves the batch.
 - A memo equal to neither `before` nor `after` becomes `skipped: conflictMemo`.
 - Only items still at `before` stay in the batch. The engine splits them in half and resubmits each half after a fresh conflict check, until single transactions are isolated.
@@ -516,10 +517,13 @@ export type YnabFailure =
   | { kind: 'rateLimited' }                     // 429
   | { kind: 'server'; status: number }          // 5xx incl. 503 timeout
   | { kind: 'network' }                         // fetch threw before a response
-  | { kind: 'timeout' };                        // client abort after 35 s
+  | { kind: 'timeout' }                         // client abort after 35 s
+  | { kind: 'cancelled' };                      // aborted by dispose or the session's signal
 ```
 
 For writes, `server`, `network` and `timeout` mean the request **may have been sent**, and they map to Unknown Outcome. For reads they map to refresh failure.
+
+An abort is classified by its reason, not by the error it throws. The client aborts its timeout with a private `TimeoutReason` sentinel, and only that reason becomes `timeout`. Any other abort, from `dispose` or from the session's signal on `switchBudget`, `disconnect` or `lock`, becomes `cancelled`, whether it happens before `fetch` starts, while it is waiting for headers or while it is reading the body. A `cancelled` result is discarded: it never pauses refresh, never creates an Unknown Outcome, and is never retried or verified. Its session is already gone (Req 2.6–2.7, 18.9).
 
 ### `src/ynab/delta.ts`
 
@@ -567,7 +571,7 @@ export interface SessionStore {
 
 React reads the store through `useSyncExternalStore`. `BudgetSessionSnapshot` holds the transactions, accounts, categories, `serverKnowledge`, derived `TagIndex` and warnings, register view state, selection, dismissals, `refreshHealth: 'ok' | { paused: YnabFailure }`, the current preview, operation state and undo history. `disconnect` and `lock` replace the snapshot and call `client.dispose()`, which aborts in-flight requests and drops the PAT (Req 2.2–2.3). `switchBudget` replaces only the `BudgetSession`. It keeps the connected `YnabClient`, because the PAT exists only in that client's closure, and aborts the old session's in-flight reads through a per-`BudgetSession` `AbortController` (Req 3.9).
 
-- **Stale-result guard**: every request made for a Budget Session, including the loader's, the Refresh Scheduler's and the write engine's, passes that session's `signal` to the client. Aborting alone is not enough, because a response can already be resolving when the switch happens. So each `BudgetSession` also carries a `generation` number, and the store applies a result (`mergeTransactions`, accounts, categories, load completion) only if that generation is still current. A result from an older generation is discarded.
+- **Stale-result guard**: every request made for a Budget Session, including the loader's, the Refresh Scheduler's and the write engine's, passes that session's `signal` to the client. Aborting alone is not enough, because a response can already be resolving when the switch happens. So each `BudgetSession` also carries a `generation` number. The store keeps a private counter that only ever increases and is never reset or reused within the store's lifetime. `chooseBudget` and `switchBudget` take the next value for the new session, and `disconnect` and `lock` advance the counter too, so a result from before a disconnect cannot land in a later connection. A request captures the generation when it starts, and the store applies its result (`mergeTransactions`, accounts, categories, load completion, write outcomes) only if the captured value equals the current one. Any other result is discarded.
 - **Scheduler ownership**: the Refresh Scheduler is started for one `BudgetSession`. `switchBudget`, `disconnect` and `lock` call its disposer before the session is replaced, and `switchBudget` starts a new scheduler once the new budget is ready.
 
 - **Selection rules**:
@@ -782,6 +786,9 @@ The mapping from YNAB's `TransactionDetail` happens in `src/ynab/map.ts`. Schedu
 
 ```typescript
 export interface BudgetSession {
+  /** From the store's increasing counter; never reused. Guards against stale results. */
+  readonly generation: number;
+  readonly signal: AbortSignal;
   readonly plan: { id: string; name: string; firstMonth: IsoDate; currencyFormat: CurrencyFormat };
   readonly knowledge: { transactions: number; accounts: number; categories: number };
   readonly domain: DomainState;
@@ -994,8 +1001,9 @@ After `disconnect` or `lock`, no reference to the PAT SHALL remain in the store.
 - `plan*` functions: exclusions, outside-account counts, merge detection, and `planUndo` conflicts.
 - `ynab/errors.ts`: status-to-failure classification. `ynab/client.ts`: fetch init, origin assertion and timeout abort.
 - `idleLock` and `refreshScheduler` with fake timers and fake visibility: 60-second cadence, return-to-tab check, write pause, and lock after a hidden period. For the scheduler, calling the disposer before the next tick removes the visibility listener, cancels the timer, runs no further checks, and drops the result of a check already in flight.
-- `store`: a delayed read from the old Budget Session resolves after `switchBudget` and is not merged, whether it was aborted or had already resolved.
-- `writeEngine`: after a batch returns 400 with some items already saved by the fake YNAB, those items are `completed` and never resent, and only items still at `before` are split.
+- `store`: a delayed read from the old Budget Session resolves after `switchBudget` and is not merged, whether it was aborted or had already resolved. This holds when switching away from a budget and back again to the same plan, and across a disconnect and reconnect.
+- `ynab/errors.ts`: an abort with the timeout reason is `timeout`. Aborts from `dispose` or the session signal are `cancelled`, before `fetch`, while waiting for headers and while reading the body. A `cancelled` read raises no `Updates paused`, and a `cancelled` write creates no Unknown Outcome.
+- `writeEngine`: after a batch returns 400 with some items already saved by the fake YNAB, those items are `completed` and never resent, an item deleted meanwhile is `skipped: gone`, and only items still at `before` are split.
 
 ### Property-Based Tests (fast-check)
 
