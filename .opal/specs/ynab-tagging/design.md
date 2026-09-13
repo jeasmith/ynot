@@ -8,7 +8,7 @@ The code has four layers:
 
 1. **Domain** (`src/domain/`) — pure, framework-free TypeScript. It holds the hashtag grammar, Tag Identity, membership, Tag Totals, the vocabulary and its warnings, register filtering, memo rewriting, and operation planning. It makes no network calls, reads no clocks and imports no React, so property-based tests can reach all of it.
 2. **YNAB adapter** (`src/ynab/`) — a small hand-written `fetch` client, typed from YNAB's pinned OpenAPI document. It covers initial loading, delta refreshes and batched memo writes, and enforces the network boundary: only the YNAB origin, `no-store` caching, timeouts and error classification.
-3. **Session runtime** (`src/session/`, `src/writes/`) — one in-memory store that owns the connection, the Budget Session, the refresh scheduler, the inactivity lock, the write engine state machine and undo history. Ending a session or switching budget drops the whole object graph.
+3. **Session runtime** (`src/session/`, `src/writes/`) — one in-memory store that owns the connection, the Budget Session, the refresh scheduler, the inactivity lock, the write engine state machine and undo history. Ending a session (disconnect, idle lock, reload) drops the whole object graph, including the `YnabClient`. Switching budget replaces only the `BudgetSession` and keeps the connected client, because the PAT lives only in that client.
 4. **UI** (`src/ui/`) — React components built on React Aria Components for keyboard and screen-reader behaviour. The layout is desktop-first with a phone layout. There is no URL routing, so no financial data can reach a URL.
 
 Out of scope, per the requirements: a backend, OAuth, persistence, a service worker, split-level writes, scheduled transactions, analytics, staged multi-operation plans, per-transaction selection in the Tag reader, queued writes and redo.
@@ -219,7 +219,8 @@ The static host serves only public assets and never receives the PAT or financia
 Plan (domain) ─▶ Impact Preview ─▶ confirm ─▶ fixed scope
   for each batch (≤50):
      [cancel requested?] → stop
-     delta pre-read → recheck each item against plan (memo + fingerprint)
+     delta pre-read → [replan(request).kind ≠ plan.kind?] → skip every remaining item (conflictEligibility), finish
+     recheck each item against plan (memo + fingerprint)
         conflicts → skipped(conflict)
      [cancel requested during pre-read?] → stop; this batch stays unattempted
      PATCH remaining items {id, memo, approved}
@@ -701,6 +702,7 @@ export interface WriteEngine {
 }
 ```
 
+- **Classification check**: after each pre-read merges, the engine replans the confirmed request and compares the plan **kind**. A rename confirmed onto a new identity becomes a merge if an external edit meanwhile added the target identity to any transaction in the budget. When the kind changes, the engine sends nothing further. Every item not yet completed becomes `skipped: conflictEligibility`, and the operation finishes with a notice that it would now be a merge and needs a fresh preview (Req 13.2, 17.3). Per-item `recheck` cannot catch this, because transactions without the target keep the same `after` and fingerprint.
 - **Batch loop**: the engine follows the write flow above. The payload for each item is `{ id, memo: after, approved: current.approved }`, where `current` is the pre-read snapshot. No `subtransactions` field is ever sent (Req 17.4–17.5).
 - **Verification**: a transaction is `completed` only when a response or delta shows its memo equal to `after`.
 - **Unknown outcomes**: they trigger an automatic delta verify. A memo equal to `after` becomes `completed`, one equal to `before` becomes `unattempted` and is included on Resume, and anything else becomes `skipped: conflictMemo` (Req 18.1–18.2). If the verify read fails, the items stay `unknown`, and the engine stays paused with Verify again available (Req 18.3).
@@ -1052,7 +1054,7 @@ After `disconnect` or `lock`, no reference to the PAT SHALL remain in the store.
 - `buildTagIndex`: the ADR 0005 examples (split-only membership, a transfer pair inside a split, closed accounts, unapproved transactions, deleted subtransactions), plus provenance: `#tax` in a parent with `#Tax` only in a split, and `##Tax` only in a split, yield the right `parentTransactionCount`, `splitTransactionCount` and `CleanupSite` flags. `#Tax` in both the parent and a split of one transaction gives `parentTransactionCount` 1 and `splitOccurrenceCount` 1. One `#Tax` in the parent plus one in a split raises no repeat cleanup warning. `##Tax #Tax` in one parent memo counts as one tidyable transaction.
 - `buildRegister`: Tag facet counts with search, category, status and other tag filters active under Match all and Match any equal the rows shown for that tag.
 - `deriveWarnings`: ordering, `#Home-Repair`/`#Home_Repair`/`#HomeRepair` producing three pairs, `#Tax`/`#Taxi` not flagged, dismissal isolation, and split-only directions.
-- `plan*` functions: exclusions, outside-account counts, merge detection, and `planUndo` conflicts. `replan` of every `PlanRequest` kind reproduces the original plan on unchanged state. `remainingWork` reports an exclusion that became eligible. `changesMembership` is false for a remove whose identity survives in a split, and `recheck` then ignores an amount-only change, as it does for respell and tidy, but not for an apply, ignores split tokens of untouched identities, and ignores a move between two accounts that are both outside `plan.activeAccountId` while flagging a move across it.
+- `plan*` functions: exclusions, outside-account counts, merge detection, and `planUndo` conflicts. `replan` of every `PlanRequest` kind reproduces the original plan on unchanged state. `remainingWork` reports an exclusion that became eligible. The write engine stops a rename whose replan became a merge after an external edit adds the target identity, even though the transactions it would still write have unchanged `after` memos. `changesMembership` is false for a remove whose identity survives in a split, and `recheck` then ignores an amount-only change, as it does for respell and tidy, but not for an apply, ignores split tokens of untouched identities, and ignores a move between two accounts that are both outside `plan.activeAccountId` while flagging a move across it.
 - `ynab/errors.ts`: status-to-failure classification. `ynab/client.ts`: fetch init, origin assertion and timeout abort.
 - `idleLock` and `refreshScheduler` with fake timers and fake visibility: 60-second cadence, return-to-tab check, write pause, and lock after a hidden period. For the scheduler, calling the disposer before the next tick removes the visibility listener, cancels the timer, runs no further checks, and drops the result of a check already in flight.
 - `store`: a delayed read from the old Budget Session resolves after `switchBudget` and is not merged, whether it was aborted or had already resolved. This holds when switching away from a budget and back again to the same plan, and across a disconnect and reconnect.
