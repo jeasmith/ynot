@@ -211,8 +211,9 @@ Plan (domain) ─▶ Impact Preview ─▶ confirm ─▶ fixed scope
      PATCH remaining items {id, memo, approved}
         200 → verify returned memos; saved ≠ after or missing → delta verify
         400 → delta verify nothing landed → split (Decision 8)
-        429 / network loss → pause(rateLimit | connection)
-        timeout / 5xx / aborted after send → pause(unknownOutcome) → auto delta verify
+        429 → pause(rateLimited)                       (response received: nothing uncertain)
+        network loss / timeout / 5xx → pause(unknownOutcome) → auto delta verify
+     pre-read or verify read fails on network loss → pause(connection) (no write in doubt)
   final delta verify → results → undo history entry → clear selection
 ```
 
@@ -413,7 +414,7 @@ Rewrite rules. Every function works on raw memo text, touches only tag spans, an
   - When only one side is whitespace, in the middle of the memo, drop nothing extra.
 
   Trailing punctuation that was trimmed from the token stays in place. This fixes the prototype's `·` defect: `shop #Tag · Club` becomes `shop · Club` (Req 12.4).
-- **Rename** replaces the text `[textStart, textEnd)` of each matching token and keeps its markers. If the parent memo already contains the target identity, the source occurrence is removed instead of renamed, so a merge never creates a repeat (Req 13.2–13.3).
+- **Rename** replaces the text `[textStart, textEnd)` of each matching token and keeps its markers. When the source and target are **distinct** identities (a merge) and the parent memo already contains the target identity, the source occurrence is removed instead of renamed, so a merge never creates a repeat (Req 13.2–13.3). When the target spelling has the **same** identity as the source (for example `#tax` to `#Tax`), `planRename` routes to `planRespell`, and occurrences are always rewritten, never removed.
 - **Respell** uses the same span replacement as rename for spelling variants of one identity (Req 13.4–13.5).
 - **Tidy** reduces every token of the identity to one marker, and removes the second and later occurrences in that memo with the gap rule (Req 13.6).
 - **Memo equality** treats `null` and `""` as equal.
@@ -434,7 +435,8 @@ export interface PlannedChange {
 export interface EligibilityFingerprint {
   readonly accountId: AccountId;
   readonly amount: number;
-  readonly splitIdentities: readonly TagIdentity[]; // sorted
+  /** Every tag token in non-deleted split memos: subtransaction ID, spelling, marker count, occurrence index. Sorted. */
+  readonly splitTokens: readonly { subtransactionId: string; spelling: string; markerCount: number; occurrence: number }[];
   readonly subtransactionIds: readonly string[];    // sorted, non-deleted
 }
 
@@ -457,7 +459,7 @@ export interface OperationPlan {
 
 export function planApply(state: DomainState, ids: readonly TransactionId[], spelling: string): OperationPlan;
 export function planRemove(state: DomainState, ids: readonly TransactionId[], identity: TagIdentity): OperationPlan;
-export function planRename(state: DomainState, from: TagIdentity, toSpelling: string): OperationPlan; // kind 'merge' when target identity exists
+export function planRename(state: DomainState, from: TagIdentity, toSpelling: string): OperationPlan; // kind 'merge' when a distinct target identity exists; delegates to planRespell when the identities are equal
 export function planDelete(state: DomainState, identity: TagIdentity): OperationPlan;
 export function planRespell(state: DomainState, identity: TagIdentity, keepSpelling: string): OperationPlan;
 export function planTidy(state: DomainState, identity: TagIdentity): OperationPlan;
@@ -469,7 +471,7 @@ export function recheck(change: PlannedChange, current: Transaction | undefined,
 - **Apply** excludes transactions that already carry the identity in any memo (Req 12.3).
 - **Remove, rename, merge, delete, respell and tidy** reach only `parentMembers`. Split-only members are listed as exclusions, and surviving split occurrences are counted (Req 9.3–9.5, 13.1, 13.8).
 - **Over-length results** are excluded and never truncated (Req 12.7).
-- **`recheck`** returns `memoChanged` when the current memo differs from `before`. It returns `eligibilityChanged` when the fingerprint differs, or when the recomputed `after` would differ. It returns `gone` for a deleted transaction (Req 17.1–17.3).
+- **`recheck`** returns `memoChanged` when the current memo differs from `before`. It returns `eligibilityChanged` when the fingerprint differs (including a same-identity respelling or marker change in a split memo, which alters spelling counts and read-only limitations), or when the recomputed `after` would differ. It returns `gone` for a deleted transaction (Req 17.1–17.3).
 
 ### `src/ynab/client.ts`
 
@@ -551,7 +553,7 @@ export interface SessionStore {
 }
 ```
 
-React reads the store through `useSyncExternalStore`. `BudgetSessionSnapshot` holds the transactions, accounts, categories, `serverKnowledge`, derived `TagIndex` and warnings, register view state, selection, dismissals, `refreshHealth: 'ok' | { paused: YnabFailure }`, the current preview, operation state and undo history. `disconnect`, `lock` and `switchBudget` replace the snapshot and call `client.dispose()` on the old client (Req 2.2–2.3, 3.9).
+React reads the store through `useSyncExternalStore`. `BudgetSessionSnapshot` holds the transactions, accounts, categories, `serverKnowledge`, derived `TagIndex` and warnings, register view state, selection, dismissals, `refreshHealth: 'ok' | { paused: YnabFailure }`, the current preview, operation state and undo history. `disconnect` and `lock` replace the snapshot and call `client.dispose()`, which aborts in-flight requests and drops the PAT (Req 2.2–2.3). `switchBudget` replaces only the `BudgetSession`. It keeps the connected `YnabClient`, because the PAT exists only in that client's closure, and aborts the old session's in-flight reads through a per-`BudgetSession` `AbortController` (Req 3.9).
 
 - **Selection rules**:
   - `setFilters` and `setActiveAccount` clear the selection when it is nonempty and raise a `selectionCleared` toast event (Req 6.4–6.5).
@@ -620,7 +622,7 @@ export interface WriteEngine {
 - **Batch loop**: the engine follows the write flow above. The payload for each item is `{ id, memo: after, approved: current.approved }`, where `current` is the pre-read snapshot. No `subtransactions` field is ever sent (Req 17.4–17.5).
 - **Verification**: a transaction is `completed` only when a response or delta shows its memo equal to `after`.
 - **Unknown outcomes**: they trigger an automatic delta verify. A memo equal to `after` becomes `completed`, one equal to `before` becomes `unattempted` and is included on Resume, and anything else becomes `skipped: conflictMemo` (Req 18.1–18.2). If the verify read fails, the items stay `unknown`, and the engine stays paused with Verify again available (Req 18.3).
-- **Pauses**: a 429 or network loss pauses the engine with its progress kept. Resume runs the verify step first, then rechecks the remaining items (Req 18.5–18.7).
+- **Pauses**: a 429 pauses the engine with reason `rateLimited`. A network loss on a `PATCH` means the write may have committed, so it pauses as `unknownOutcome` and verifies immediately. A network loss on a read (pre-read or verify) pauses as `connection`, because no write is in doubt. Progress is kept in every case, and Resume runs the verify step first, then rechecks the remaining items (Req 18.1, 18.5–18.7).
 - **Cancel** sets `cancelRequested`. The in-flight batch is awaited and verified, and no further batches are sent (Req 18.4).
 - **Finish**: partial success is kept with no rollback (Req 17.7). The engine appends a history entry holding the completed changes, clears the selection, and keeps the results (Req 6.6, 16.6, 17.9).
 - **Retry of failed items**: failed items can be retried only through Select for review, which builds a new plan (Req 6.7, 17.8).
@@ -851,7 +853,7 @@ export interface BudgetSession {
 
 ### Property 13: Merges and rename-onto-existing are set-based
 
-*For any* rename whose target identity already exists, the plan kind SHALL be `merge`. After the plan is applied, each transaction SHALL be a member of the target at most once, and the target's member count SHALL equal the size of the union of both member sets.
+*For any* rename whose target identity already exists, the plan kind SHALL be `merge`. After the plan is applied, each transaction SHALL be a member of the target at most once, and the target's member count SHALL equal the size of the union of both member sets. *For any* rename whose target spelling has the same identity as the source, the plan kind SHALL be `respell`. Every parent-memo occurrence SHALL be rewritten to the target spelling, and no occurrence SHALL be removed.
 
 **Validates: Requirements 13.2, 13.3**
 
@@ -914,7 +916,7 @@ export interface BudgetSession {
 *For any* store state, after `disconnect`, `lock`, or a completed `switchBudget`:
 
 - the snapshot SHALL contain no transactions, memos, tag data, selection, preview, operation, history or dismissals from the previous Budget Session;
-- the previous `YnabClient` SHALL be disposed.
+- after `disconnect` or `lock`, the `YnabClient` SHALL be disposed; after `switchBudget`, the same client SHALL remain connected and every in-flight read from the previous Budget Session SHALL be aborted, so its results are never merged into the new session.
 
 After `disconnect` or `lock`, no reference to the PAT SHALL remain in the store.
 
