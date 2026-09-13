@@ -462,6 +462,8 @@ export interface PlannedChange {
   readonly before: string | null;       // raw memo at planning time
   readonly after: string | null;
   readonly fingerprint: EligibilityFingerprint;
+  /** True when this change alters the set of identities the transaction is a member of (parent `after` plus split memos). */
+  readonly changesMembership: boolean;
 }
 
 export interface EligibilityFingerprint {
@@ -522,7 +524,7 @@ export function recheck(change: PlannedChange, plan: OperationPlan, current: Tra
 - **Re-planning**: every plan carries its `PlanRequest`. The store keeps the open preview's plan, and after a merged refresh it calls `replan(state, plan.request)` and compares the result with `planDiffers` (Req 4.6). During an operation, `remainingWork` replans the confirmed request against the latest state. The IDs of changes not in the confirmed scope, for example an exclusion that has since become eligible, are the remaining work. They are never written (Req 16.4–16.5). Undo has no remaining work.
 - **`recheck`** returns `memoChanged` when the current memo differs from `before`. It returns `gone` for a deleted transaction. It returns `eligibilityChanged` when the recomputed `after` would differ, or when a fingerprint field **relevant to the plan** differs (Req 17.1–17.3). Unrelated changes never block the write (Req 17.4):
   - The account is relevant to every kind only as **scope**: whether the transaction is inside `plan.activeAccountId`. Moving a transaction across that boundary changes the preview's outside-account count, or takes a Register selection out of the account it was chosen in, so it is a conflict. Moving it between two other accounts changes neither, so it is ignored.
-  - `amount` is relevant only where the operation changes membership, and so moves amounts in or out of Tag Totals: apply, remove, merge and delete, and an undo of one of those. It is not relevant to rename onto a new identity, respell or tidy, which keep every membership and total.
+  - `amount` is relevant only to a change whose `changesMembership` is true, because only then does the write move the amount into or out of a Tag Total. It is set per change when planning, by comparing the membership computed from `before` with the one computed from `after`, each together with the transaction's split memos. So a remove or delete whose identity survives in a split, a merge onto a transaction already in the target whose source survives in a split, a rename onto a new identity, a respell and a tidy all ignore an amount-only edit. `planUndo` computes it the same way for each restoring change.
   - `splitTokens` and `subtransactionIds` are compared only for the tokens whose identity the plan touches (the source and, for rename or merge, the target). Those tokens decide `alreadyTagged` and `splitOnly` exclusions, unreachable split counts and spelling counts. This includes a same-identity respelling or marker change in a split memo. A split being added or removed counts only when it adds or removes such a token.
 
 ### `src/ynab/client.ts`
@@ -944,7 +946,7 @@ export interface BudgetSession {
 
 ### Property 15: No write without a passing recheck
 
-*For any* interleaving of external edits in the fake YNAB, a transaction SHALL be included in a `PATCH` only if the immediately preceding pre-read showed its memo equal to `before` and no fingerprint field relevant to the plan changed. Otherwise it SHALL end as `skipped` with the matching reason. An amount-only change SHALL NOT skip a respell, tidy or rename onto a new identity.
+*For any* interleaving of external edits in the fake YNAB, a transaction SHALL be included in a `PATCH` only if the immediately preceding pre-read showed its memo equal to `before` and no fingerprint field relevant to the plan changed. Otherwise it SHALL end as `skipped` with the matching reason. An amount-only change SHALL skip a transaction only when its planned change has `changesMembership` true.
 
 **Validates: Requirements 17.1, 17.2, 17.3, 4.6**
 
@@ -1042,7 +1044,7 @@ After `disconnect` or `lock`, no reference to the PAT SHALL remain in the store.
 - `rewrite.ts`: the prototype's `·` regression, removal at start, end and middle, the line-break preference, rename keeping extra markers, merge removing the source occurrence, tidy, and over-length handling.
 - `buildTagIndex`: the ADR 0005 examples (split-only membership, a transfer pair inside a split, closed accounts, unapproved transactions, deleted subtransactions), plus provenance: `#tax` in a parent with `#Tax` only in a split, and `##Tax` only in a split, yield the right `parentTransactionCount` and `CleanupSite` flags. One `#Tax` in the parent plus one in a split raises no repeat cleanup warning.
 - `deriveWarnings`: ordering, `#Home-Repair`/`#Home_Repair`/`#HomeRepair` producing three pairs, `#Tax`/`#Taxi` not flagged, dismissal isolation, and split-only directions.
-- `plan*` functions: exclusions, outside-account counts, merge detection, and `planUndo` conflicts. `replan` of every `PlanRequest` kind reproduces the original plan on unchanged state. `remainingWork` reports an exclusion that became eligible. `recheck` ignores an amount-only change for respell and tidy but not for apply, ignores split tokens of untouched identities, and ignores a move between two accounts that are both outside `plan.activeAccountId` while flagging a move across it.
+- `plan*` functions: exclusions, outside-account counts, merge detection, and `planUndo` conflicts. `replan` of every `PlanRequest` kind reproduces the original plan on unchanged state. `remainingWork` reports an exclusion that became eligible. `changesMembership` is false for a remove whose identity survives in a split, and `recheck` then ignores an amount-only change, as it does for respell and tidy, but not for an apply, ignores split tokens of untouched identities, and ignores a move between two accounts that are both outside `plan.activeAccountId` while flagging a move across it.
 - `ynab/errors.ts`: status-to-failure classification. `ynab/client.ts`: fetch init, origin assertion and timeout abort.
 - `idleLock` and `refreshScheduler` with fake timers and fake visibility: 60-second cadence, return-to-tab check, write pause, and lock after a hidden period. For the scheduler, calling the disposer before the next tick removes the visibility listener, cancels the timer, runs no further checks, and drops the result of a check already in flight.
 - `store`: a delayed read from the old Budget Session resolves after `switchBudget` and is not merged, whether it was aborted or had already resolved. This holds when switching away from a budget and back again to the same plan, and across a disconnect and reconnect.
