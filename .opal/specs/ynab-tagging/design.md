@@ -79,7 +79,7 @@ Out of scope, per the requirements: a backend, OAuth, persistence, a service wor
 
 **Reasoning**: JavaScript has no full case folding. `toLowerCase` differs from folding (`ß`, final sigma, Cherokee), and it is context-sensitive, so it cannot satisfy Req 8.1. A generated table pins the folding version, as the requirements review asked. Unicode's normalization and case-folding stability policies guarantee that results for assigned characters do not change between versions, so relying on the runtime's NFC risks drift only for characters unassigned in older engines.
 
-**NFC baseline**: the supported browsers are the build's default target, Vite's "Baseline Widely Available" set, and that is the NFC baseline. NFC is deliberately not bundled. Tag Identity is never stored, serialized or sent anywhere. It is recomputed in one browser for one session, and every reader, warning and writer in that session uses the same runtime `normalize`, so Req 8.3's single contract holds within any session. Two browsers could differ only for a tag containing a character that was unassigned in the older browser's Unicode data and has a canonical decomposition. Even then they would disagree only about which identity to display for that session; no stored data would diverge. `scripts/generate-case-folding.ts` records the runtime Unicode version it was checked against, and the identity tests assert NFC results for the fixed Unicode examples, so a regression in a supported browser fails the end-to-end suite.
+**NFC baseline**: the supported browsers are the build's default target, Vite's "Baseline Widely Available" set, and that is the NFC baseline. NFC is deliberately not bundled. Tag Identity is never stored, serialized or sent anywhere. It is recomputed in one browser for one session, and every reader, warning and writer in that session uses the same runtime `normalize`, so Req 8.3's single contract holds within any session. Two browsers could differ only for a tag containing a character that was unassigned in the older browser's Unicode data and has a canonical decomposition. Even then they would disagree only about which identity to display for that session; no stored data would diverge. `scripts/generate-case-folding.ts` records the runtime Unicode version it was checked against, and `e2e/identity.spec.ts` runs the `tagIdentity` example table inside every Playwright browser project, so a supported browser whose NFC gives a different result fails the end-to-end suite.
 
 **Alternative Options**: `toLocaleLowerCase('und')`, which is rejected as not being case folding. Bundling a full NFC implementation adds weight but gains nothing for assigned characters.
 
@@ -1090,7 +1090,8 @@ It is exposed two ways: as a `fetchImpl` for `vp test` integration tests, and as
   - projects for Desktop Chrome, Desktop Firefox, WebKit and iPhone 14 viewports;
   - the core workflow walkthrough from Req 21.1 against the fake YNAB;
   - failure scenarios from Req 21.4–21.5: memo conflict, eligibility conflict, partial success, timeout leading to an Unknown Outcome and verification, 429 then Resume, cancellation, reload mid-operation, undo conflict, refresh failure with `Updates paused` and blocked writes, and a budget switch that clears state;
-  - keyboard-only runs of every core workflow.
+  - keyboard-only runs of every core workflow;
+  - `identity.spec.ts`: the `parseMemo` and `tagIdentity` example tables evaluated in each browser, so the NFC baseline is checked in real engines (Decision 4).
 - **Accessibility**: `@axe-core/playwright` scans each screen and dialog at desktop and phone sizes, and fails on serious or critical violations (Req 20.2, 20.5).
 - **CSP and boundary**:
   - every end-to-end test registers a `securitypolicyviolation` listener and fails on any event;
@@ -1153,6 +1154,7 @@ e2e/
   selection-refresh.spec.ts
   accessibility.spec.ts
   boundary-csp.spec.ts
+  identity.spec.ts
 scripts/
   check-build-csp.ts
   verify-deployment-headers.ts
