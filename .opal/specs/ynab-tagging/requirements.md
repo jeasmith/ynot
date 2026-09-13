@@ -56,6 +56,7 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 8. IF a build requires weakening that Content Security Policy, THEN THE release SHALL fail acceptance.
 9. THE application SHALL have no service worker or offline mode; ordinary HTTP caching of static assets SHALL remain permitted.
 10. THE privacy explanation SHALL distinguish ordinary static-host request metadata from financial data and identify the device, browser and privileged extensions, dedicated origin, deployment account, build pipeline, and bundled dependencies as trusted components; it SHALL NOT claim protection from their compromise.
+11. THE application SHALL prevent YNAB API responses from being stored in the browser HTTP cache, by requesting them with `no-store` cache semantics, so that ordinary static-asset caching never extends to financial data.
 
 ### Requirement 2: Session and credential lifetime
 
@@ -68,7 +69,9 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 3. WHEN the Session reaches 15 minutes without user interaction, THE application SHALL warn the user and lock by clearing the complete in-memory Session.
 4. WHEN the tab is merely backgrounded, THE application SHALL NOT immediately lock it; background refresh activity SHALL NOT count as user interaction for the inactivity limit.
 5. WHEN the user chooses Disconnect, THE application SHALL explain that local state is cleared but the PAT is not revoked, and direct suspected compromise to YNAB Developer Settings for manual revocation.
-6. WHEN a Session has ended, THE application SHALL require a new connection and reconstruct financial state from YNAB rather than restore the previous Session or its undo history.
+6. WHEN the user chooses Disconnect, or the inactivity warning is shown, while a Write Operation has requests already sent to YNAB, THE application SHALL state that those requests may still take effect in YNAB after the Session clears, without verification, results, or undo; it SHALL NOT delay clearing the Session to wait for them.
+7. THE application SHALL treat reload and tab closure during a Write Operation the same way: sent requests may complete after local state is discarded, and a later Session SHALL read the resulting memos from YNAB as ordinary data without claiming knowledge of the discarded operation.
+8. WHEN a Session has ended, THE application SHALL require a new connection and reconstruct financial state from YNAB rather than restore the previous Session or its undo history.
 
 ### Requirement 3: Budget selection and complete financial scope
 
@@ -352,7 +355,7 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 3. THE acceptance evidence SHALL demonstrate the core workflows on desktop and phone and through keyboard and screen-reader access, including the selection-cleared toast.
 4. THE automated or simulated failure evidence SHALL cover conflicting memo and relevant non-memo changes, partial success, timeouts, Unknown Outcomes, interrupted Sessions, cancellation, rate limits or connection loss, explicit Resume, and undo conflicts.
 5. THE acceptance evidence SHALL check selection clearing, offscreen Select all, automatic-refresh timing, retained browsing after refresh failure, blocked writes, and Budget-switch state clearing against their numbered requirements.
-6. THE release validation SHALL verify the memory-only credential and data boundary and enforced Content Security Policy, including that runtime requests do not disclose the PAT or financial data to the Ynot host or third parties.
+6. THE release validation SHALL verify the memory-only credential and data boundary and enforced Content Security Policy, including that runtime requests do not disclose the PAT or financial data to the Ynot host or third parties, and that no YNAB API response is present in the browser HTTP cache after API use, reload, and Disconnect.
 7. THE release record SHALL distinguish completed checks from unperformed or failing checks and SHALL NOT treat prototype simulations as evidence of verified live YNAB writes.
 
 ### Requirement 22: First-version exclusions
@@ -386,4 +389,4 @@ The requirements above are the draft contract. These links preserve the rational
 | [Safe write, conflict, and recovery resolution](https://github.com/jeasmith/ynot/issues/9#issuecomment-5559857802) | 4, 12–13, 16–19, 21 |
 | [First-version acceptance boundary](https://github.com/jeasmith/ynot/issues/10#issuecomment-5559965626) | 3–6, 16, 18–22 |
 | [Near-duplicate resolution](https://github.com/jeasmith/ynot/issues/17#issuecomment-5560026583) | 14–15, 22 |
-| Owner clarifications during requirements review, 2026-09-13: undo confirms a summary rather than a full preview; a second write is blocked, not queued; selection stays Register-only; Tag Identity is NFC plus full default case folding; the user chooses the spelling a consistency fix keeps | 6, 8, 13, 16, 18–19, 22 |
+| Owner clarifications during requirements review, 2026-09-13: undo confirms a summary rather than a full preview; a second write is blocked, not queued; selection stays Register-only; Tag Identity is NFC plus full default case folding; the user chooses the spelling a consistency fix keeps; Disconnect and inactivity lock clear immediately and warn that sent requests may still land; YNAB responses are kept out of the HTTP cache | 1–2, 6, 8, 13, 16, 18–19, 21–22 |
