@@ -853,7 +853,7 @@ export interface BudgetSession {
 
 ### Property 13: Merges and rename-onto-existing are set-based
 
-*For any* rename whose target identity already exists, the plan kind SHALL be `merge`. After the plan is applied, each transaction SHALL be a member of the target at most once, and the target's member count SHALL equal the size of the union of both member sets. *For any* rename whose target spelling has the same identity as the source, the plan kind SHALL be `respell`. Every parent-memo occurrence SHALL be rewritten to the target spelling, and no occurrence SHALL be removed.
+*For any* rename onto a distinct identity that already exists, the plan kind SHALL be `merge`. After the plan is applied, each transaction SHALL be a member of the target at most once, and the target's member count SHALL equal the size of the union of both member sets. *For any* rename whose target spelling has the same identity as the source, the plan kind SHALL be `respell`. Every parent-memo occurrence SHALL be rewritten to the target spelling, and no occurrence SHALL be removed.
 
 **Validates: Requirements 13.2, 13.3**
 
