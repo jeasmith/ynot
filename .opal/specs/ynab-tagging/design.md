@@ -219,6 +219,7 @@ Plan (domain) ─▶ Impact Preview ─▶ confirm ─▶ fixed scope
      [cancel requested?] → stop
      delta pre-read → recheck each item against plan (memo + fingerprint)
         conflicts → skipped(conflict)
+     [cancel requested during pre-read?] → stop; this batch stays unattempted
      PATCH remaining items {id, memo, approved}
         200 → verify returned memos; saved ≠ after or missing → delta verify
         400 → delta verify, classify each item → split only items still at before (Decision 8)
@@ -281,7 +282,7 @@ export function parseMemo(memo: string | null): ParsedMemo;
 
 The parser walks the memo by code point:
 
-1. A `#` is a candidate when it sits at the start of the memo, or when the previous code point is neither `\` nor in `\p{L}` or `\p{N}`. If the previous code point is a combining mark (`\p{M}`), the test applies to the base character of its sequence, so decomposed `é#tag` is rejected exactly like precomposed `é#tag` (ADR 0004).
+1. A `#` is a candidate when it sits at the start of the memo, or when the previous code point is neither `\` nor in `\p{L}` or `\p{N}`. If the previous code point is a combining mark (`\p{M}`), the test applies to the base character of its sequence, so decomposed `é#tag` is rejected exactly like precomposed `é#tag` (Req 7.1, ADR 0004). A mark with no base character (at the memo start) is treated as the memo start.
 2. Consecutive extra `#` markers are consumed.
 3. The token runs to the next `\p{White_Space}` or the end of the memo.
 4. Trailing `\p{Po}`, `\p{Pe}` and `\p{Pf}` are trimmed.
@@ -325,10 +326,25 @@ export interface TagEntry {
   readonly parentMembers: ReadonlySet<TransactionId>;
   readonly splitOccurrenceCount: number;
   readonly total: TagTotal;
-  readonly cleanup: { readonly repeatedIn: readonly TransactionId[]; readonly extraMarkersIn: readonly TransactionId[] };
+  readonly cleanup: {
+    readonly repeatedIn: readonly CleanupSite[];
+    readonly extraMarkersIn: readonly CleanupSite[];
+  };
 }
 
-export interface SpellingUse { readonly transactionCount: number; readonly earliestDate: IsoDate; }
+export interface SpellingUse {
+  readonly transactionCount: number;
+  /** Transactions carrying this spelling in the parent memo (reachable by respell). */
+  readonly parentTransactionCount: number;
+  readonly earliestDate: IsoDate;
+}
+
+/** Where a cleanup issue occurs in one transaction. A repeat that spans the parent and a split counts as split-borne. */
+export interface CleanupSite {
+  readonly transactionId: TransactionId;
+  readonly inParent: boolean;   // the issue is in the parent memo (tidyable)
+  readonly inSplits: boolean;   // the issue is in a split memo, or spans parent and split (read-only)
+}
 
 export interface TagTotal {
   readonly netMilliunits: number;
@@ -371,7 +387,9 @@ export function deriveWarnings(index: TagIndex, dismissed: ReadonlySet<PairKey>)
 
 - **Near-duplicate Pairs** are every pair of distinct identities that share a nonempty key. A group of three identities yields three pairs, and pair keys sort the two identities by code point (Req 15.1–15.4).
 - **Merge directions** are offered only when `rewritableCount > 0`. When neither direction qualifies, the warning offers an explanation and dismissal only (Req 15.9–15.11).
-- **Cleanup** warnings appear for any memo that repeats a tag or has extra markers. `tidyableTransactionCount` counts only parent memos (Req 14.4, 14.6).
+- **Cleanup** warnings appear for any memo that repeats a tag or has extra markers. `tidyableTransactionCount` counts sites with `inParent`, and `readOnlyTransactionCount` counts sites with `inSplits` and no `inParent` (Req 14.4, 14.6).
+- **Spelling choices** take `parentWritableCount` from `SpellingUse.parentTransactionCount`, not from the identity-wide `parentMembers`. A transaction with `#tax` in its parent and `#Tax` only in a split is writable for `tax` and read-only for `Tax`.
+- **Provenance is kept per spelling and per cleanup site** because `deriveWarnings` sees only the index. Identity-wide member sets cannot tell those cases apart.
 
 ### `src/domain/register/register.ts`
 
@@ -428,7 +446,7 @@ Rewrite rules. Every function works on raw memo text, touches only tag spans, an
 - **Rename** replaces the text `[textStart, textEnd)` of each matching token and keeps its markers. When the source and target are **distinct** identities (a merge) and the parent memo already contains the target identity, the source occurrence is removed instead of renamed, so a merge never creates a repeat (Req 13.2–13.3). When the target spelling has the **same** identity as the source (for example `#tax` to `#Tax`), `planRename` routes to `planRespell`, and occurrences are always rewritten, never removed.
 - **Respell** uses the same span replacement as rename for spelling variants of one identity (Req 13.4–13.5).
 - **Tidy** reduces every token of the identity to one marker, and removes the second and later occurrences in that memo with the gap rule (Req 13.6).
-- **Memo equality** treats `null` and `""` as equal.
+- **Empty memos**: a rewrite whose result is empty returns `null`, never `""`. The rewriters never compare memos for conflicts; that is `recheck`'s job, and it compares exactly (see `src/ynab/map.ts`).
 
 ### `src/domain/operations/plan.ts`
 
@@ -655,7 +673,7 @@ export interface WriteEngine {
 - **Verification**: a transaction is `completed` only when a response or delta shows its memo equal to `after`.
 - **Unknown outcomes**: they trigger an automatic delta verify. A memo equal to `after` becomes `completed`, one equal to `before` becomes `unattempted` and is included on Resume, and anything else becomes `skipped: conflictMemo` (Req 18.1–18.2). If the verify read fails, the items stay `unknown`, and the engine stays paused with Verify again available (Req 18.3).
 - **Pauses**: a 429 pauses the engine with reason `rateLimited`. A network loss on a `PATCH` means the write may have committed, so it pauses as `unknownOutcome` and verifies immediately. A network loss on a read (pre-read or verify) pauses as `connection`, because no write is in doubt. Progress is kept in every case, and Resume runs the verify step first, then rechecks the remaining items (Req 18.1, 18.5–18.7).
-- **Cancel** sets `cancelRequested`. The in-flight batch is awaited and verified, and no further batches are sent (Req 18.4).
+- **Cancel** sets `cancelRequested`. The engine checks it before each pre-read and again immediately before each `PATCH`, so a cancel that arrives during a pre-read sends nothing for that batch, and its items stay `unattempted`. A `PATCH` already sent is awaited and verified, and no further batches are sent (Req 18.4).
 - **Finish**: partial success is kept with no rollback (Req 17.7). The engine appends a history entry holding the completed changes, clears the selection, and keeps the results (Req 6.6, 16.6, 17.9).
 - **Retry of failed items**: failed items can be retried only through Select for review, which builds a new plan (Req 6.7, 17.8).
 
@@ -685,7 +703,7 @@ export interface UndoHistory { readonly entries: readonly HistoryEntry[]; } // n
 | `AppShell` | Header with budget switcher, Refresh, `Updates paused` indicator, Disconnect confirmation (with in-flight warning) and the Register/Tags tabs; hosts the toast region and idle dialog | 2.5–2.6, 3.9–3.10, 4.1, 4.7 |
 | `AccountRail` | Exclusive account navigation with `matching of total` counts, including closed accounts | 5.1, 5.9 |
 | `RegisterToolbar` | Search, category/group/status facets, tag chips with Match all/any, year jump | 5.3–5.5 |
-| `RegisterGrid` | Virtualised React Aria GridList with `aria-rowcount`; checkbox selection; `Select all N matching transactions`; rows show account, category context (split child groups), prose memo, tag chips (clickable filters), signed amount, status marker with label | 5.2, 5.6–5.8, 5.10, 6.1–6.3 |
+| `RegisterGrid` | Virtualised React Aria GridList with `aria-rowcount`; checkbox selection; `Select all N matching transactions`; rows show account, category context (split child groups), prose memo, tag chips (clickable filters; a chip for a split-only membership shows a read-only icon and its accessible name ends "read-only, in a split"), signed amount, status marker with label | 5.2, 5.6–5.8, 5.10, 6.1–6.3, 9.3 |
 | `TransactionInspector` | Status label, raw memo, read-only split lines with amounts and memos, tag list with read-only markers | 5.6–5.7, 9.3 |
 | `SelectionBar` | Apply/remove actions for the selection, or the write-blocked reason | 6.2, 12.1 |
 | `TagRail` | Exclusive tag list; pinned collapsible `needs attention` group; single-use section; per-entry warning markers | 11.1, 14.2–14.3 |
@@ -780,7 +798,7 @@ export interface DomainState {
 }
 ```
 
-The mapping from YNAB's `TransactionDetail` happens in `src/ynab/map.ts`. Scheduled transactions are never requested, and pending ones are never returned (Req 3.3–3.4). Deleted accounts are hidden from the rail, and closed accounts are kept.
+The mapping from YNAB's `TransactionDetail` happens in `src/ynab/map.ts`. It maps a `""` memo (parent or split) to `null`, so the domain never holds `""`. Every memo comparison in `recheck`, verification and `planUndo` is then exact (`===`) on the mapped value (Req 17.1–17.2, 19.2–19.3). An empty memo is written as `null`. This depends on contract check 5. If YNAB turns out to treat `null` and `""` as different in any way a user can see, the mapping is revisited through the change protocol before the write engine is built. Scheduled transactions are never requested, and pending ones are never returned (Req 3.3–3.4). Deleted accounts are hidden from the rail, and closed accounts are kept.
 
 ### `BudgetSession` (in-memory only)
 
@@ -828,7 +846,7 @@ export interface BudgetSession {
 
 ### Property 3: Identity is invariant under canonical equivalence and case
 
-*For any* tag text `t`, `tagIdentity` SHALL return the same identity for `t`, `t.normalize('NFD')`, `t.normalize('NFC')` and any string whose full case folding equals that of `t`. It SHALL differ for any `NFKC`-only equivalent that is not canonically equivalent.
+*For any* tag text `t`, `tagIdentity` SHALL return the same identity for `t`, `t.normalize('NFD')`, `t.normalize('NFC')` and any string whose full case folding equals that of `t`. It SHALL differ for two texts whose full case foldings of their NFC forms differ, even when they are `NFKC`-equivalent (for example `ＴＡＸ` and `TAX`, or `m²` and `m2`). `ﬁ` and `fi` SHALL share an identity, because folding maps the ligature.
 
 **Validates: Requirements 8.1, 8.2, 8.3**
 
@@ -858,7 +876,7 @@ export interface BudgetSession {
 
 ### Property 8: Apply then remove is the identity
 
-*For any* memo `m` that does not carry identity `i` and any valid spelling `s` of `i`, `removeIdentity(applyTag(m, s), i)` SHALL equal `m`, with `null` and `""` treated as equal. `parseMemo(applyTag(m, s))` SHALL contain `m`'s tokens in their original order, followed by one token with spelling `s`.
+*For any* memo `m` that does not carry identity `i` and any valid spelling `s` of `i`, `removeIdentity(applyTag(m, s), i)` SHALL equal `m`. Domain memos are never `""` (see `src/ynab/map.ts`), so an empty `m` is `null` and the round trip returns `null`. `parseMemo(applyTag(m, s))` SHALL contain `m`'s tokens in their original order, followed by one token with spelling `s`.
 
 **Validates: Requirements 12.2, 12.4, 12.5**
 
@@ -918,7 +936,7 @@ export interface BudgetSession {
 
 ### Property 18: A single writer, and no silent resumption
 
-*For any* event sequence (refresh success, connectivity restored, visibility change), no `PATCH` SHALL be sent while an operation is paused or has unknown outcomes unless `resume` or `verifyAgain` was invoked. At most one operation SHALL exist, and `start` SHALL be rejected while one does. Cancel SHALL send no batch after the in-flight one.
+*For any* event sequence (refresh success, connectivity restored, visibility change), no `PATCH` SHALL be sent while an operation is paused or has unknown outcomes unless `resume` or `verifyAgain` was invoked. At most one operation SHALL exist, and `start` SHALL be rejected while one does. After `cancel`, no `PATCH` SHALL be sent except one already sent, including when the cancel arrives during a pre-read.
 
 **Validates: Requirements 4.4, 4.9, 18.4, 18.5, 18.6, 18.7, 18.8, 3.10**
 
@@ -994,9 +1012,9 @@ After `disconnect` or `lock`, no reference to the PAT SHALL remain in the store.
 ### Unit Tests (`vp test`, importing from `vite-plus/test`)
 
 - `parseMemo`: the ADR 0004 example table, Unicode cases (`#Café` composed and decomposed, `#家計。`, `#٣`, `#Ⅻ`, `##Household`, `\#`, `C:\#temp`, `é#tag` in both forms), `#-` as a tag, and `null` or empty memos.
-- `tagIdentity`: `ß`/`ss`, final sigma, Turkic dotted I (not special-cased), full-width versus ASCII kept distinct, and the pinned `CASE_FOLDING_UNICODE_VERSION`.
+- `tagIdentity`: `ß`/`ss`, final sigma, Turkic dotted I (not special-cased), full-width versus ASCII and `m²` versus `m2` kept distinct, `ﬁ` folding to `fi`, and the pinned `CASE_FOLDING_UNICODE_VERSION`.
 - `rewrite.ts`: the prototype's `·` regression, removal at start, end and middle, the line-break preference, rename keeping extra markers, merge removing the source occurrence, tidy, and over-length handling.
-- `buildTagIndex`: the ADR 0005 examples (split-only membership, a transfer pair inside a split, closed accounts, unapproved transactions, deleted subtransactions).
+- `buildTagIndex`: the ADR 0005 examples (split-only membership, a transfer pair inside a split, closed accounts, unapproved transactions, deleted subtransactions), plus provenance: `#tax` in a parent with `#Tax` only in a split, and `##Tax` only in a split, yield the right `parentTransactionCount` and `CleanupSite` flags.
 - `deriveWarnings`: ordering, `#Home-Repair`/`#Home_Repair`/`#HomeRepair` producing three pairs, `#Tax`/`#Taxi` not flagged, dismissal isolation, and split-only directions.
 - `plan*` functions: exclusions, outside-account counts, merge detection, and `planUndo` conflicts.
 - `ynab/errors.ts`: status-to-failure classification. `ynab/client.ts`: fetch init, origin assertion and timeout abort.
@@ -1060,7 +1078,7 @@ These confirm API behaviour the design depends on. Each is a documented gap in Y
 2. A `since_date` equal to `first_month` returns the earliest transactions, including any dated before the first month. If it does not, the history start must move earlier.
 3. The maximum accepted `PATCH` batch size is at least 50.
 4. The delta transactions endpoint with `since_date` returns changes to older transactions.
-5. Whether YNAB stores `""` or `null` for a memo emptied by removal.
+5. Whether YNAB stores `""` or `null` for a memo emptied by removal, and whether it distinguishes them anywhere a user can see. The `""` to `null` mapping in `src/ynab/map.ts` depends on this.
 
 If a check fails, it goes through the change protocol before the dependent code is built.
 
