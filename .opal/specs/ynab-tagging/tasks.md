@@ -66,8 +66,9 @@ Each layer imports only from the layers before it, so each checkpoint verifies a
     - It restores every memo it changes, and prints results without memos, amounts or the PAT
     - _Requirements: 3.2, 12.2, 17.4, 17.5, 21.7_
 
-  - [ ] 3.2 Run the checks against the controlled test budget and record the results
+  - [ ] 3.2 Run the checks against the controlled test budget and record the results (owner; non-blocking)
     - Needs the owner, a test budget and a PAT
+    - **This is the one exception to building in order.** If the owner has not run the checks yet, leave this task unchecked and continue with task 4. Only tasks 9.5, 9.7 and 11 wait for it, and each of them says so
     - Record the outcomes in `docs/research/ynab-contract-checks.md` with the date and the API version
     - If any check fails, stop and follow `.opal/runtime/change-protocol.md` before building the code that depends on it. Check 5 gates `src/ynab/map.ts`; checks 1, 3 and 4 gate the write engine; check 2 gates `src/ynab/load.ts`
     - _Requirements: 3.2, 17.4, 17.5, 21.7_
@@ -233,6 +234,7 @@ Each layer imports only from the layers before it, so each checkpoint verifies a
     - **Validates: Requirements 1.4, 1.11**
 
   - [ ] 9.5 Implement mapping and delta merge
+    - **Waits for task 3.2** (check 5). Until it is done, continue with 9.6, then return here
     - Add `src/ynab/map.ts`: `TransactionDetail` to `Transaction`, mapping `""` memos (parent and split) to `null` according to contract check 5, dropping deleted subtransactions, and mapping accounts and categories (deleted accounts hidden, closed kept)
     - Add `src/ynab/delta.ts`: `mergeTransactions` upserts by ID, drops `deleted`, replaces subtransactions, and returns a new map
     - _Requirements: 3.3, 3.4, 3.5, 4.5, 9.6_
@@ -245,6 +247,7 @@ Each layer imports only from the layers before it, so each checkpoint verifies a
     - _Requirements: 21.4_
 
   - [ ] 9.7 Implement the initial load
+    - **Waits for task 3.2** (check 2) and task 9.5
     - Add `src/ynab/load.ts`: accounts, categories and transactions from `first_month` in parallel
     - On a timeout or 503 from the full transactions request, fall back to yearly windows, keeping the minimum `server_knowledge` and merging idempotently by ID
     - Report progress; any window failure is a load failure
@@ -292,6 +295,7 @@ Each layer imports only from the layers before it, so each checkpoint verifies a
     - _Requirements: 2.3, 2.4_
 
 - [ ] 11. Write engine and undo history
+  - **Waits for task 3.2** (checks 1, 3 and 4)
   - [ ] 11.1 Implement the write engine core
     - Add `src/writes/writeEngine.ts`: `TxOutcome`, `OperationState`, `Operation` and `WriteEngine`
     - Keep transitions in a pure function over state and events, and keep requests in a small runner that passes the Budget Session's signal and discards results from a stale generation
@@ -301,6 +305,7 @@ Each layer imports only from the layers before it, so each checkpoint verifies a
       - recheck each item
       - check cancel again, then `PATCH` `{id, memo: after, approved: current.approved}`
     - Verify responses, and run a delta verify on a missing or different memo
+    - After the last batch, always run a final delta verify before recording results and the history entry, even when every response showed the expected memo
     - Update `remainingWork` after each read
     - _Requirements: 4.4, 13.2, 16.4, 16.5, 16.6, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6_
 
@@ -394,6 +399,8 @@ Each layer imports only from the layers before it, so each checkpoint verifies a
   - [ ] 16.1 Add the tag rail and reader
     - Add `src/ui/tags/TagRail.tsx` with the exclusive tag list, the pinned collapsible `needs attention` group, the single-use section, per-entry markers and an empty vocabulary state
     - Add `src/ui/tags/TagReader.tsx` with the `all accounts · all time` label, the outside-account count, total composition (net, outflow, inflow, count and transfer pairs, explained without promising cancellation), members with split context and read-only markers, and header actions for rename, merge, delete, make consistent and tidy, each gated by the write gate
+    - Validate rename target text with `validateTagText` before planning. Invalid text shows an inline message naming the reason and creates no plan
+    - Add component tests for rename validation (whitespace, marker, trailing punctuation, digits only)
     - _Requirements: 10.2, 10.5, 10.6, 10.7, 11.1, 11.2, 11.3, 11.4, 11.5, 13.1, 14.2, 14.3_
 
   - [ ] 16.2 Add warning detail
