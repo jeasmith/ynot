@@ -199,7 +199,7 @@ Each layer imports only from the layers before it, so each checkpoint verifies a
   - [ ] 7.4 Write property tests for planning
     - **Property 10: Nothing is truncated to fit**
     - **Property 11: Applying an existing tag is a no-op**
-    - **Property 12: Split-only memberships are never written** (the plan half; the payload half is in task 11.4)
+    - **Property 12: Split-only memberships are never written** (the plan half: no `PlannedChange` targets a split-only member; the payload half is in tasks 11.4 and 11.5)
     - **Property 13: Merges and rename-onto-existing are set-based**
     - **Property 22: Undo restores only exact matches**
     - **Validates: Requirements 9.3–9.5, 12.3, 12.6, 12.7, 12.9, 13.2, 13.3, 15.9, 15.10, 19.1–19.3, 19.5**
@@ -329,7 +329,8 @@ Each layer imports only from the layers before it, so each checkpoint verifies a
       - a cancel during a pre-read sends nothing for that batch
       - an over-length rejection after a passing prediction is `skipped: rejected` and is not retried
       - no payload contains `subtransactions`
-    - _Requirements: 12.8, 13.2, 17.5, 17.7, 18.4_
+      - for remove, rename, merge, delete, respell and tidy over a fixture where the identity sits only in a split memo of some parents, those parent IDs never appear in any `PATCH`
+    - _Requirements: 9.3, 12.8, 13.2, 17.5, 17.7, 18.4_
 
   - [ ] 11.5 Write property tests for the write engine
     - Use fault-injection schedules and external-edit interleavings from the fake YNAB
@@ -338,7 +339,8 @@ Each layer imports only from the layers before it, so each checkpoint verifies a
     - **Property 16: Approval is carried**
     - **Property 17: Outcomes partition the scope honestly**
     - **Property 18: A single writer, and no silent resumption**
-    - **Validates: Requirements 3.10, 4.4, 4.6, 4.9, 16.4–16.6, 17.1–17.4, 17.6, 17.7, 17.9, 18.2–18.8**
+    - **Property 12: Split-only memberships are never written** (the payload half: across generated budgets with split-only members and every management kind, no split-only parent ID appears in any `PATCH`, and no item carries `subtransactions`)
+    - **Validates: Requirements 3.10, 9.3, 17.5, 4.4, 4.6, 4.9, 16.4–16.6, 17.1–17.4, 17.6, 17.7, 17.9, 18.2–18.8**
 
 - [ ] 12. Checkpoint - Verify the adapter, session runtime and write engine
   - Run `vp check` and `vp test`, including every property test from Properties 14–19 and 23–25
