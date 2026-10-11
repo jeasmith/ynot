@@ -17,3 +17,19 @@ The console is not adopted, but its insight is. The vocabulary's real failure is
 - Removing a hashtag from a memo closes the gap it leaves and changes nothing else. The prototype's first attempt at tidying also ate the space before a human `·` separator, turning "Weekly shop · Clubcard voucher used" into "Weekly shop· Clubcard voucher used". Silently rewriting a user's own prose is the worst outcome this feature can produce, so the rewrite stays deliberately conservative and every preview shows the literal before and after of each memo.
 - Tag membership, Tag Totals, warnings, and impact previews are all computed over the whole budget rather than the active account, because the vocabulary is budget-wide (ADR 0002). Every impact preview continues to count how many affected transactions sit outside the active account.
 - A warning is a claim about the whole vocabulary, so it is only as honest as the history behind it. Since API v1.85.0 a transaction listing that omits `since_date` returns only the last year, which would let the rail call a tag single-use when it has forty older uses, and let an impact preview undercount the memos a rename is about to rewrite. The tag reader must load the complete history first — an explicit `since_date` old enough to cover the plan, derived from its `first_month` — before it computes a vocabulary, ranks a warning, or previews an impact.
+
+## Amendment, 2026-10-11
+
+The ledger view returns alongside the reader. Its strength, seeing every tag at once, answers the owner's main question: what each group adds up to. A **Tag Overview** table now lists every tag with net, outflow, inflow and count, sortable by each, and opens a tag in the reader when chosen. The rail and reader are unchanged.
+
+Warnings are trimmed to what catches real drift:
+
+- **Kept:** the near-duplicate marker, which names the pair, and a lower-priority single-use marker. Both show on tags in the rail and in the overview.
+- **Removed:**
+  - the case-collision ("spelling consistency") warning, because identity already makes `#Household` and `#household` one tag, so the difference is cosmetic
+  - the pinned "needs attention" group
+  - the cleanup warning for `##` and repeated tags
+
+Acting on a near-duplicate marker opens the ordinary rename with the other spelling offered as the target. The user picks the direction there, and rename-onto-existing remains a merge.
+
+Prevention now comes first. Applying a tag offers existing tags as the user types, so most new variants are never written. The spelling-consistency chooser, tidy and warning dismissal are deferred.
