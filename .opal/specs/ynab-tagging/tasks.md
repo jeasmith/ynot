@@ -296,7 +296,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Scenarios:
       - all done, a memo conflict, and a deleted transaction
       - a 400 on one batch after another batch is done
-      - a timeout that committed and one that did not
+      - a timeout that committed and one that did not, and an early dropped connection whose verify waits until 35 s after sending
       - a 429, and cancel mid-run
       - verify failure, then Verify again
       - the final verify always runs

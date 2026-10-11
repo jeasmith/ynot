@@ -13,7 +13,7 @@ None of it adds protection against memo loss. It automates continuing after a fa
 
 Write failures now follow one rule: **stop, verify, report.** On any failure (a non-success response, a timeout, a rate limit or a lost connection), Ynot sends nothing more for that operation and re-reads its transactions. Each one is then **done**, **unchanged** or **conflict**. If verification itself cannot complete, the operation stays an Unknown Outcome, offers *Verify again*, and blocks new writes.
 
-A request that timed out or lost its connection may still be applied by YNAB after the verify read. Ynot cannot prove that it never will, so it does not wait for that proof, which would block writes indefinitely. Its items still at `before` are marked **unchanged** with the reason *YNAB did not answer; this change may still appear*. A late landing is harmless: it writes the same `after` memo a re-run would write. A re-run's pre-write recheck then sees the landed memo, and skips or excludes the transaction.
+A request that timed out or lost its connection could still be applied by YNAB after an early verify read. If a different operation then wrote the same transaction, the late write would overwrite it. YNAB documents that it abandons any request that takes longer than 30 seconds, answering 503. So for a request that got no response, the verify read waits until at least 35 seconds after the request was sent. Ynot's own client timeout is 35 seconds, so a timeout needs no extra wait; only an early dropped connection waits out the remainder. After that point the outcome is final. Items still at `before` are **unchanged**, with the reason *YNAB did not answer*, and writes stay blocked while the wait runs.
 
 ## Consequences
 
