@@ -22,7 +22,7 @@ A tag instead runs from its `#` to the next whitespace. The user drew that bound
 - The same tag repeated in one memo is one membership and one contribution to the total. Counting it twice would silently double a Tag Total.
 - A doubled marker such as `##Household` reads as `#Household`, and a repeated tag is accepted as written. Both raise a vocabulary warning ranked below duplicate spellings: nothing is broken, membership and totals are already correct, but a repeated tag burns characters the user's prose may later need. These are the only warnings whose cure is guaranteed safe — collapsing a marker or dropping a repeat changes no total — and, unlike the single-use signal, fixing one removes it permanently, which matters when no dismissal can be persisted. Tidying many memos is one operation under one preview, the same shape as a global rename, so it does not reopen ADR 0003's rejection of staged batches.
 - Removing a tag closes the gap it leaves and changes nothing else, per ADR 0003. Every rewrite operates on the raw memo text rather than the displayed text, or a rename would write back the escape-stripped form and turn a literal `\#` into a real tag on the next read.
-- This grammar governs parent memos. Whether a hashtag inside a split line's memo is parsed at all is a membership question, deferred to issue #8.
+- This grammar governs parent memos. Whether a hashtag inside a split line's memo is parsed at all is a membership question, deferred to issue #8. _(Resolved by [ADR 0005](0005-tag-membership-and-totals.md): split memos are parsed with this same grammar, and their tags count towards membership.)_
 
 ## Amendment, 2026-10-11
 

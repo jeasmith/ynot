@@ -339,7 +339,7 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 8. WHEN a failed Transaction is retried, THE application SHALL require a fresh preview rather than replay the old write blindly.
 9. THE Operation Results SHALL give each Transaction in the confirmed scope one status: done, unchanged, or conflict. They SHALL show an Unknown Outcome as not yet verified rather than as any of the three.
 10. THE application SHALL describe conflict protection as best effort and SHALL NOT promise absolute prevention of silent overwrites, because pre-write and post-write checks do not eliminate an intervening edit race.
-11. THE Operation Results SHALL show, for each Transaction, its date, payee, account, amount, raw memo before and after, and status. For any status other than done, they SHALL give a plain-language reason, such as `memo changed in YNAB since preview`, `would exceed 500 characters`, `YNAB rejected: <message>`, `not verified: connection lost`, or `tag only in a split; edit it in YNAB`.
+11. THE Operation Results SHALL show, for each Transaction, its date, payee, account, amount, raw memo before and after, and status. For any status other than done, they SHALL give a plain-language reason, such as `memo changed in YNAB since preview`, `would exceed 500 characters`, `YNAB rejected: <message>`, `YNAB did not answer; this change may still appear`, `not verified: connection lost`, or `tag only in a split; edit it in YNAB`.
 12. THE Operation Results SHALL be filterable by status and SHALL remain available until the next Write Operation is confirmed or the Session ends.
 
 ### Requirement 18: Failures, uncertain outcomes, and recovery

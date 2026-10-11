@@ -192,7 +192,7 @@ Continuing is a fresh plan of what remains, built from the Operation Results (Re
 
 **Outcome**: `src/session/patStorage.ts` is the only code that touches `localStorage`. It reads, writes and deletes one key, `ynot.pat`. Lint bans web-storage globals everywhere else.
 
-**Reasoning**: ADR 0006 and Req 2.9–2.10. One module with three functions keeps the storage surface easy to audit and test. The CSP and the absence of third-party scripts protect the stored token.
+**Reasoning**: ADR 0006 and Req 2.9–2.10. One module with three functions keeps the storage surface easy to audit and test. The CSP and the absence of third-party scripts make it harder for foreign script to reach the origin, but script that does run there can read the stored token. That residual risk is accepted by opting in.
 
 **Alternative Options**:
 - `sessionStorage`: it would not survive closing the tab, so it removes little friction.
@@ -686,7 +686,7 @@ The engine is a pure transition function, `step(state, event) → { state, effec
 export type ItemStatus = 'pending' | 'sent' | 'done' | 'unchanged' | 'conflict';
 
 export type ConflictReason = 'memoChanged' | 'gone' | 'replanDiffers' | 'externalEdit';
-export type UnchangedReason = 'notSent' | 'rejected' | 'cancelled' | 'stoppedAfterFailure';
+export type UnchangedReason = 'notSent' | 'rejected' | 'cancelled' | 'stoppedAfterFailure' | 'noResponse';
 
 export interface ItemResult {
   readonly change: PlannedChange;
@@ -713,7 +713,7 @@ export interface Operation {
 - **Stop**: any failure moves to `verifying` (Req 18.1). Items not yet sent become `unchanged` with reason `stoppedAfterFailure`. A cancel does the same with reason `cancelled`, once the in-flight `PATCH`, if any, settles (Req 18.4).
 - **Verify**: one delta read classifies every `sent` item (Req 17.6, 18.2):
   - memo = `after` → `done`
-  - memo = `before` → `unchanged`, with reason `rejected` and YNAB's message when the batch returned 400
+  - memo = `before` → `unchanged`, with reason `rejected` and YNAB's message when the batch returned 400, or reason `noResponse` when the request timed out or lost its connection. A `noResponse` change may still land later, writing the same `after`, and a re-run's recheck catches it (ADR 0007)
   - deleted, or any other memo → `conflict` with reason `externalEdit`
 
   The final verify runs on every operation, not only after a failure.
