@@ -490,7 +490,7 @@ Trailing punctuation that was trimmed from the token stays in place, so `shop #T
 
 **Rename** replaces the text `[textStart, textEnd)` of each matching token and keeps its markers.
 - **Merge:** when the source and target are **distinct** identities and the parent memo already contains the target, the source occurrence is removed instead of renamed, so a merge never creates a repeat (Req 13.2–13.3).
-- **Respelling:** when the target spelling has the **same** identity as the source (for example `#tax` to `#Tax`), every occurrence is rewritten and none is removed.
+- **Same identity:** a target with the **same** identity as the source (for example `#tax` to `#Tax`) is never planned. `planRename` throws, and `RenameDialog` shows the reason inline, because respelling one identity is deferred (Req 13.4, 13.9).
 
 **Empty results.** A rewrite whose result is empty returns `null`, never `""`. The rewriters never compare memos; `recheck` and verification do, exactly.
 
@@ -718,7 +718,7 @@ export interface Operation {
 
   The final verify runs on every operation, not only after a failure.
 - **Verification failure**: the operation becomes `unverified`, its `sent` items stay `sent`, Verify again repeats the delta read, and writes stay blocked (Req 18.3).
-- **Finish**: there is no rollback (Req 17.7). The undo slot becomes this operation's `done` changes (label, and `{ transactionId, before, confirmedAfter }` for each), the selection clears, and the results stay until the next confirm (Req 6.6, 17.12, 19.1).
+- **Finish**: there is no rollback (Req 17.7). For any operation other than an undo, the undo slot becomes this operation's `done` changes; a finished undo clears the slot (label, and `{ transactionId, before, confirmedAfter }` for each), the selection clears, and the results stay until the next confirm (Req 6.6, 17.12, 19.1).
 - **Continuing**: `selectForReview` puts the chosen items' transaction IDs into the Register selection and builds a fresh preview of the same request kind. Items already `done` are excluded by planning (Req 6.7, 18.7).
 
 ### The undo slot
@@ -732,7 +732,7 @@ export interface UndoSlot {
 }
 ```
 
-- **Scope**: there is one slot, holding the most recent operation with `done` changes. An undo replaces it when it finishes, so undoing an undo re-applies the original (Req 19.1, 19.5).
+- **Scope**: there is one slot, holding the most recent non-undo operation with `done` changes. A finished undo clears the slot, and an undo is never itself undoable, so there is no redo (Req 19.1, 19.5, 22.8).
 - **Preview**: `previewUndo` opens an ordinary Impact Preview from `planUndo` (Req 19.4).
 - **Lifetime**: the slot lives in `BudgetSession` and ends with it (Req 19.6).
 
@@ -976,7 +976,7 @@ Properties marked **(fast-check)** are property-based tests. The others are chec
 - after it is applied, each transaction SHALL be a member of the target at most once;
 - the target's member count SHALL equal the size of the union of both member sets.
 
-*For any* rename whose target has the same identity as the source, every parent-memo occurrence SHALL be rewritten and none removed.
+*For any* rename whose target has the same identity as the source, `planRename` SHALL throw and no plan SHALL exist.
 
 **Validates: Requirements 13.2, 13.3**
 
@@ -1093,7 +1093,7 @@ The repository works test-first: each slice's tests are written alongside or bef
 
 - **`parseMemo`**: the ADR 0004 example table and Unicode cases (`#Café` composed and decomposed, `#家計。`, `#٣`, `##Household`, `\#`, `C:\#temp`, `é#tag` in both forms), plus `null` and empty memos.
 - **`tagIdentity`**: case variants, NFC/NFD, `Straße`/`STRASSE` distinct, full-width distinct, `ﬁ`/`fi` distinct. **`validateTagText`**: every rejection reason.
-- **`rewrite.ts`**: the `·` regression; removal at the start, end and middle; the line-break preference; rename keeping extra markers; merge removing the source occurrence; same-identity rename; over-length handling.
+- **`rewrite.ts`**: the `·` regression; removal at the start, end and middle; the line-break preference; rename keeping extra markers; merge removing the source occurrence; same-identity rename rejected; over-length handling.
 - **`buildTagIndex`**:
   - the restaurant example: one bill split into an own share and three `#owed-*` lines, each contributing its line, plus a repayment inflow netting `#owed-alice` to zero;
   - a parent-memo tag overriding split tags;

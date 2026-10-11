@@ -45,6 +45,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
 - [ ] 2. Checkpoint - Verify the scaffold
   - Run `vp check`, `vp test` and `vp build`
   - Run `vp preview` and confirm the CSP header in the response
+  - _Requirements: 1.1, 1.7, 1.9_
 
 ### Slice 1: read-only tag reader
 
@@ -223,7 +224,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - split lines tagged per person, and a transfer
     - unapproved transactions, and a memo with prose and `\#`
   - Record the result in the PR description. Slice 1 is now the first usable version
-  - _Requirements: 21.1_
+  - _Requirements: 3.2, 10.3, 11.6, 21.1, 21.3_
 
 ### Contract checks
 
@@ -253,7 +254,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - _Requirements: 5.1, 5.2, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 5.11, 5.12_
 
   - [ ] 9.2 Implement memo rewriting
-    - Add `src/domain/memo/rewrite.ts` with `applyTag`, `removeIdentity`, `renameIdentity` (merge removes the source when the target is present; a same-identity rename rewrites every occurrence) and `fits`
+    - Add `src/domain/memo/rewrite.ts` with `applyTag`, `removeIdentity`, `renameIdentity` (merge removes the source when the target is present) and `fits`
     - Unit tests: the `·` regression, removal at the start, end and middle, the line-break preference, extra markers kept on rename, and over-length handling
     - _Requirements: 12.2, 12.4, 12.5, 12.6, 13.2, 13.3_
 
@@ -271,7 +272,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
       - `replan` round trip for every kind
       - `recheck` returns `gone`, `memoChanged` and `replanDiffers`, and ignores amount and account edits that leave `after` unchanged
       - `planUndo` gives `changedSince` exclusions (Property 20)
-      - invalid spellings throw
+      - invalid spellings and same-identity rename targets throw
     - _Requirements: 9.3, 9.4, 9.5, 9.7, 12.1, 12.3, 12.7, 12.9, 12.11, 13.1, 13.2, 13.3, 13.5, 13.8, 13.9, 16.2, 16.3, 17.1, 17.2, 17.3, 19.2, 19.3_
 
   - [ ] 9.5 Write the no-op apply property test
@@ -288,7 +289,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
       - `unverified` with Verify again when the verify read fails
       - cancel after the in-flight request
       - the final verify on every operation
-    - On finish, fill the undo slot with the `done` changes and clear the selection
+    - On finish, fill the undo slot with the `done` changes (a finished undo clears it instead) and clear the selection
     - _Requirements: 6.6, 12.8, 16.4, 16.6, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7, 17.9, 18.1, 18.2, 18.3, 18.4, 18.8, 19.1, 19.5_
 
   - [ ] 10.2 Test the write engine against the fake YNAB
@@ -364,13 +365,14 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
 - [ ] 13. Checkpoint - Slice 2 is verified
   - Run `vp check`, `vp test`, `vp build` and `vp run e2e`
   - Resolve failures before continuing
+  - _Requirements: 12.1, 17.6, 18.1, 19.1, 21.3, 21.4, 21.5_
 
 ### Slice 3: vocabulary management
 
 - [ ] 14. Rename, merge and delete
   - [ ] 14.1 Add rename, merge and delete to the Tag reader
     - `TagReader` header actions: Rename and Delete
-    - `RenameDialog`: inline validation, and a merge notice when the target identity exists
+    - `RenameDialog`: inline validation, rejection of a target with the same identity as the source, and a merge notice when the target identity exists
     - Delete and rename go through the ordinary Impact Preview, which states unreachable split occurrences and whether the old tag remains in the vocabulary
     - One operation at a time
     - _Requirements: 9.5, 11.3, 13.1, 13.2, 13.3, 13.7, 13.8, 13.9_
@@ -386,6 +388,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
 
 - [ ] 15. Checkpoint - Slice 3 is verified
   - Run `vp check`, `vp test`, `vp build` and `vp run e2e`
+  - _Requirements: 13.1, 13.2, 14.6, 21.3_
 
 ### Release
 
@@ -413,6 +416,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
 - [ ] 17. Final checkpoint - Ensure verification passes
   - Run `vp check`, `vp test`, `vp build` and `vp run e2e`
   - Confirm that 7, 16.2 and 16.3 are recorded
+  - _Requirements: 21.1, 21.2, 21.3, 21.6_
 
 ## Notes
 

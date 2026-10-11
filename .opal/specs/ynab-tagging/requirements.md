@@ -277,7 +277,7 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 6. _Removed 2026-10-11: tidy is deferred. Repeated tags and extra markers leave membership and totals correct (decision 4)._
 7. THE application SHALL confirm one management operation at a time and SHALL NOT stage multiple independent operations under one combined preview in v1.
 8. THE global writer SHALL preserve unrelated memo text and obey the same fit, split-read-only, preview, conflict, recovery, and undo rules as other tagging operations.
-9. WHEN the user enters rename text that is not a valid Tag under Requirement 7, THE application SHALL say why inline and SHALL NOT create an Impact Preview.
+9. WHEN the user enters rename text that is not a valid Tag under Requirement 7, or that has the same Tag Identity as the Tag being renamed, THE application SHALL say why inline and SHALL NOT create an Impact Preview; changing only the spelling of one identity is the deferred spelling-consistency action (criterion 13.4).
 
 ### Requirement 14: Advisory Vocabulary Warnings
 
@@ -364,11 +364,11 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 
 #### Acceptance Criteria
 
-1. THE application SHALL offer undo only for the most recent Write Operation that has confirmed changes, from its Operation Results, and the undo SHALL target those confirmed changes. It SHALL NOT keep a multi-step undo history in v1 (decision 8).
+1. THE application SHALL offer undo only for the most recent non-undo Write Operation that has confirmed changes, from its Operation Results, and the undo SHALL target those confirmed changes. It SHALL NOT keep a multi-step undo history in v1 (decision 8).
 2. WHEN undoing a Transaction change, THE application SHALL restore the original raw memo only if the current memo exactly matches Ynot's confirmed result.
 3. IF the current memo differs, THEN THE application SHALL skip that Transaction and report the conflict while allowing other unchanged confirmed results to be restored.
 4. WHEN the user chooses undo, THE application SHALL present it as an ordinary Impact Preview naming the operation it reverses, and require explicit confirmation.
-5. THE undo operation SHALL follow the same pre-write checks, verification, partial-success, cancellation, recovery, and Operation Results rules as other writes, and SHALL itself become the most recent Write Operation.
+5. THE undo operation SHALL follow the same pre-write checks, verification, partial-success, cancellation, recovery, and Operation Results rules as other writes, and SHALL NOT itself be undoable. WHEN an undo finishes, THE application SHALL clear the undo slot, so there is no redo (Req 22.8).
 6. WHEN a Session ends or the user switches Budgets, THE application SHALL discard undo and SHALL NOT imply that undo survives that boundary.
 
 ### Requirement 20: Desktop-first, phone, keyboard, and programmatic access
@@ -423,7 +423,7 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 5. THE first version SHALL NOT add charts, trends, date-ranged Tag Totals, budgeting advice, a reimbursement schema or view ([issue #2](https://github.com/jeasmith/ynot/issues/2)), or analytics beyond the agreed tagged Transaction lists, Tag Overview, and Tag Total composition.
 6. THE first version SHALL NOT offer staged multi-operation management plans or broader typo/similarity detection beyond the confirmed near-duplicate rule.
 7. THE first version SHALL NOT offer per-Transaction selection in the Tag reader or queued Write Operations.
-8. THE first version SHALL NOT offer OAuth, multi-step undo, pause and resume of Write Operations, automatic polling, an inactivity lock, the spelling-consistency action, tidy, warning dismissal, or writing new splits.
+8. THE first version SHALL NOT offer OAuth, multi-step undo, redo, pause and resume of Write Operations, automatic polling, an inactivity lock, the spelling-consistency action, tidy, warning dismissal, or writing new splits.
 
 ## Decision Traceability
 
