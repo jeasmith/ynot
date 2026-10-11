@@ -2,166 +2,201 @@
 
 ## Overview
 
-Ynot v1 is a static single-page app built with Vite+ (`vp`), React and TypeScript and deployed to Vercel on a dedicated subdomain. The browser talks straight to `https://api.ynab.com` using a Personal Access Token that exists only inside one in-memory YNAB client object. Nothing is stored anywhere except page memory and YNAB.
+Ynot v1 is a static single-page app built with Vite+ (`vp`), React and TypeScript, deployed to Vercel on a dedicated subdomain. The browser talks straight to `https://api.ynab.com` with a Personal Access Token. The token lives inside one in-memory YNAB client object, and also in the origin's `localStorage` when the user ticks **Remember on this device**. Everything else exists only in page memory and in YNAB.
 
 The code has four layers:
 
-1. **Domain** (`src/domain/`) — pure, framework-free TypeScript. It holds the hashtag grammar, Tag Identity, membership, Tag Totals, the vocabulary and its warnings, register filtering, memo rewriting, and operation planning. It makes no network calls, reads no clocks and imports no React, so property-based tests can reach all of it.
-2. **YNAB adapter** (`src/ynab/`) — a small hand-written `fetch` client, typed from YNAB's pinned OpenAPI document. It covers initial loading, delta refreshes and batched memo writes, and enforces the network boundary: only the YNAB origin, `no-store` caching, timeouts and error classification.
-3. **Session runtime** (`src/session/`, `src/writes/`) — one in-memory store that owns the connection, the Budget Session, the refresh scheduler, the inactivity lock, the write engine state machine and undo history. Ending a session (disconnect, idle lock, reload) drops the whole object graph, including the `YnabClient`. Switching budget replaces only the `BudgetSession` and keeps the connected client, because the PAT lives only in that client.
-4. **UI** (`src/ui/`) — React components built on React Aria Components for keyboard and screen-reader behaviour. The layout is desktop-first with a phone layout. There is no URL routing, so no financial data can reach a URL.
+1. **Domain** (`src/domain/`): pure, framework-free TypeScript. It covers:
+   - the hashtag grammar and Tag Identity
+   - membership, Contributions and Tag Totals
+   - the vocabulary and its markers
+   - register filtering and memo rewriting
+   - operation planning
 
-Out of scope, per the requirements: a backend, OAuth, persistence, a service worker, split-level writes, scheduled transactions, analytics, staged multi-operation plans, per-transaction selection in the Tag reader, queued writes and redo.
+   It makes no network calls, reads no clocks and imports no React, so tests can reach all of it.
+2. **YNAB adapter** (`src/ynab/`): a small hand-written `fetch` client, typed from YNAB's pinned OpenAPI document. It covers initial loading, delta refreshes and batched memo writes. It also enforces the network boundary: only the YNAB origin, `no-store` caching, timeouts and error classification.
+3. **Session runtime** (`src/session/`, `src/writes/`): one in-memory store that owns:
+   - the connection and the Budget Session
+   - refresh on return
+   - the write engine and the undo slot
+   - the one module allowed to touch `localStorage` (`patStorage.ts`)
+
+   Ending a session (Disconnect or reload) drops the whole object graph. Switching budget drops the Budget Session and keeps the connection.
+4. **UI** (`src/ui/`): React components built on React Aria Components. The layout is desktop-first with a phone layout. There is no URL routing, so no financial data can reach a URL.
+
+The build is delivered in vertical slices. Slice 1 is a read-only tag reader, and it is the first usable version (see [Build slices](#build-slices)).
+
+Out of scope, per the requirements:
+
+- a backend, OAuth, or persistence beyond a Remembered PAT
+- a service worker
+- split-level writes and scheduled transactions
+- analytics
+- staged plans, queued writes, multi-step undo, and pause/resume
+- automatic polling and an idle lock
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- Enforce the privacy boundary in code and deployment: memory-only PAT and data, YNAB as the only network destination, a fail-closed CSP, and no HTTP caching of API responses (Req 1, 2, 21.6).
-- Implement the settled grammar, identity, membership, totals and warning rules once, as pure functions shared by the reader, the vocabulary, the warnings and every writer (Req 7–10, 14–15).
+- Enforce the privacy boundary in code and deployment (Req 1, 2, 21.6):
+  - YNAB is the only network destination.
+  - The CSP fails closed.
+  - API responses are never cached.
+  - Financial data is held in memory only.
+  - A PAT is stored only when the user opts in.
+- Implement the grammar, identity, membership, Contribution, totals and marker rules once, as pure functions shared by the reader, the overview and every writer (Req 7–11, 14–15).
 - Make every memo rewrite provably conservative: only tag spans and at most one adjacent whitespace character change, and nothing is ever truncated (Req 12–13).
-- Run writes through one state machine with a fixed scope, pre-write conflict checks, verification, pause, explicit Resume and session-only undo (Req 16–19).
-- Load complete history and keep it fresh, with a request budget that fits YNAB's limit of 200 requests per hour (Req 3–4).
-- Deliver every core workflow on desktop and phone, by keyboard and with a screen reader (Req 20).
-- Produce the automated and manual evidence Requirement 21 demands.
+- Keep each write safe with a few checks: re-read before writing, carry `approved`, verify afterwards, and on any failure stop, verify and report (Req 16–19).
+- Ship a useful read-only slice first, then add tagging and vocabulary management in further slices.
+- Make every control findable by role and name, for keyboards, screen readers and automated tools alike (Req 20).
 
 **Non-Goals:**
 
 - A server, server functions, proxy or edge middleware of any kind (Req 1.1).
 - Offline support, a service worker or IndexedDB caching (Req 1.9, 22.4).
-- Split-memo writes, or selection and editing of split tags (Req 22.2).
-- Charts, date-ranged totals, reimbursement tracking or other analytics (Req 22.5).
-- Redo, queued operations, or staged multi-operation plans (Req 18.8, 22.6–22.7).
-- Deep links or shareable URLs for accounts, tags or filters, because the URL must carry no financial data (Req 1.3).
-- Detecting other tabs or apps that use the same PAT; YNAB's 429 response is the only authority on quota.
+- Split-memo writes, selection of splits, or writing new splits (Req 22.2, 22.8).
+- Charts, date-ranged totals, the reimbursement extension or other analytics (Req 22.5).
+- Redo, multi-step undo, pause and resume, or queued operations (Req 22.7–22.8).
+- Deep links or shareable URLs, because the URL must carry no financial data (Req 1.3).
+- Detecting other tabs or apps that use the same PAT. YNAB's 429 response is the only authority on quota.
 
 ## Decisions
 
 ### Decision 1: Vite+ toolchain with React and TypeScript
 
-**Outcome**: Build a client-only single-page app with React 19 and strict TypeScript on the Vite+ toolchain (`vite-plus`, `vp` CLI), using pnpm (pinned through `packageManager`) in a single package. Node 24 LTS is pinned in `engines` and in Vercel, so `scripts/*.ts` run directly with Node's built-in type stripping. `vp dev`, `vp build` (Rolldown), `vp test` (Vitest), `vp check` (Oxfmt, Oxlint and type checks), `vp preview` and `vp run` are the only entry points. All tool configuration lives in one `vite.config.ts`.
+**Outcome**: Build a client-only single-page app with React 19 and strict TypeScript on the Vite+ toolchain (`vite-plus`, `vp` CLI).
 
-**Reasoning**: Req 1.1 and 1.7 need a purely static bundle that runs under a CSP forbidding inline and evaluated scripts. Vite's production output (built by Rolldown under Vite+) emits only external module scripts and extracted CSS. One toolchain and one config file cover formatting, type-aware linting (the `no-console` and storage bans in Data Models), type checking and tests, which keeps the dev-dependency footprint small. The owner's other projects already use React, TypeScript, Vitest, Oxlint and pnpm.
+- **Package management:** pnpm, pinned through `packageManager`, in a single package.
+- **Node:** 24 LTS, pinned in `engines` and in Vercel, so `scripts/*.ts` run directly with Node's built-in type stripping.
+- **Entry points:** `vp dev`, `vp build` (Rolldown), `vp test` (Vitest), `vp check` (Oxfmt, Oxlint and type checks), `vp preview` and `vp run` are the only ones.
+- **Configuration:** all tool configuration lives in one `vite.config.ts`.
 
-**Risks**:
-- Vite+ is young and in beta, so the build pins its version exactly.
-- The CSP build guard (`scripts/check-build-csp.ts`) checks the actual Rolldown output, so it does not rely on assumptions about Vite's behaviour.
-- `vp preview` must honour `preview.headers`; the first build task verifies this. If it does not, the end-to-end tests serve `dist/` through a small static server that applies the `vercel.json` headers.
+**Reasoning**: Req 1.1 and 1.7 need a purely static bundle that runs under a CSP forbidding inline and evaluated scripts. Vite's production output emits only external module scripts and extracted CSS. One toolchain and one config file cover formatting, type-aware linting (including the storage ban in Data Models), type checking and tests. The owner's other projects already use React, TypeScript, Vitest, Oxlint and pnpm.
+
+**Risks**: Vite+ is young and in beta, so the build pins its version exactly. `vp preview` must honour `preview.headers`, and the first build task verifies this. If it does not, the end-to-end tests serve `dist/` through a small static server that applies the `vercel.json` headers.
 
 **Alternative Options**:
-- Plain Vite with separate Vitest, Oxlint and Prettier configs — more mature, but several config files and tools to keep in step.
-- Next.js static export — it injects inline bootstrap scripts, so a strict CSP would need hashes, and it brings server features that cannot be used here.
-- Svelte — just as CSP-friendly, but a different stack from the owner's other projects.
+- **Plain Vite** with separate Vitest, Oxlint and Prettier configs: more mature, but more config to keep in step.
+- **Next.js static export:** it injects inline bootstrap scripts, which conflicts with a strict CSP.
 
 ### Decision 2: Vercel static hosting, with headers from `vercel.json`
 
-**Outcome**: Deploy the `dist/` output as a static Vercel project on a dedicated subdomain. CSP and security headers are declared in `vercel.json`, and Web Analytics, Speed Insights and the preview toolbar are disabled.
+**Outcome**: Deploy `dist/` as a static Vercel project on a dedicated subdomain.
 
-- **Trusted origin**: the production domain assigned in the Vercel project is the only origin for real use. Its exact hostname is deployment configuration, not code (Req 1.5), so nothing in the bundle names it.
-- **Preview deployments** stay enabled for review, but Vercel Deployment Protection (Vercel Authentication) covers every non-production URL, so only the owner can open one. Previews serve the same `vercel.json` headers. The app does not check its own hostname or disable PAT entry on previews.
-- **Aliases**: no custom domain other than the production subdomain is assigned.
+- **Headers:** CSP and security headers are declared in `vercel.json`.
+- **Vercel features:** Web Analytics, Speed Insights and the preview toolbar are disabled.
+- **Origins:** the production domain is the only origin for real use, and its hostname is deployment configuration, not code (Req 1.5).
+- **Previews:** preview deployments stay behind Vercel Deployment Protection.
 
-**Reasoning**: The owner already uses Vercel, and `vercel.json` headers are version-controlled beside the code, so tests can check the same header source that production serves (Req 1.5–1.8). `vp preview` reads the same file, so local end-to-end tests run under the production CSP. On a preview, the CSP still restricts any PAT to `https://api.ynab.com`. What differs is that a preview runs unmerged branch code, and Deployment Protection keeps anyone other than the owner from reaching it. The privacy explanation already names the deployment account and build pipeline as trusted (Req 1.10). A runtime hostname check was rejected: it would stop live preview testing and add no protection against the deployment account, which could change the check anyway.
+**Reasoning**: The owner already uses Vercel, and `vercel.json` headers are version-controlled beside the code. `vp preview` reads the same file, so local end-to-end tests run under the production CSP. A dedicated origin matters more now that a Remembered PAT lives in that origin's storage (ADR 0006).
 
-**Alternative Options**: Cloudflare Pages, whose `_headers` file injects nothing into pages. It was rejected only because it would add a new account and workflow.
+**Alternative Options**: Cloudflare Pages, rejected only because it would add a new account and workflow.
 
 ### Decision 3: Pure domain core, imperative shell
 
-**Outcome**: All rules for tags, totals, warnings, filtering and memo rewriting live in `src/domain/` as pure functions over plain data. React components and the write engine only call them.
+**Outcome**: All rules for tags, Contributions, totals, markers, filtering, memo rewriting and planning live in `src/domain/` as pure functions over plain data. React components and the write engine only call them.
 
-**Reasoning**: Requirements 7–19 are dense with invariants: set membership, gap-closing, fit checks, fixed scope and conflict rules. These are best verified with fast-check properties, and that is only practical when the logic has no I/O. It also guarantees Req 8.3's single identity contract, because the reader, the warnings and the writers import the same `tagIdentity` function.
+**Reasoning**:
+- **Testability:** the grammar and rewrite rules carry the invariants that protect the user's prose, and those are best checked with fast-check properties, which is only practical without I/O.
+- **One identity contract:** it guarantees Req 8.3, because every consumer imports the same `tagIdentity`.
 
-**Alternative Options**: Logic spread through hooks and components, which is simpler at first but makes property tests and the "one identity contract" guarantee hard to achieve.
+**Alternative Options**: Logic spread through hooks and components, which is simpler at first but defeats both goals.
 
-### Decision 4: Bundled Unicode case-folding table, pinned to Unicode 17.0.0
+### Decision 4: Tag Identity is NFC plus default lowercase
 
-**Outcome**: Tag Identity is `fold(nfc(text))`. `nfc` uses the runtime's `String.prototype.normalize('NFC')`. `fold` uses a generated table of `CaseFolding.txt` statuses C and F from Unicode 17.0.0, committed as `src/domain/grammar/caseFolding.generated.ts`.
+**Outcome**: `tagIdentity(text) = text.normalize('NFC').toLowerCase()`.
 
-**Reasoning**: JavaScript has no full case folding. `toLowerCase` differs from folding (`ß`, final sigma, Cherokee), and it is context-sensitive, so it cannot satisfy Req 8.1. A generated table pins the folding version, as the requirements review asked. Unicode's normalization and case-folding stability policies guarantee that results for assigned characters do not change between versions, so relying on the runtime's NFC risks drift only for characters unassigned in older engines.
+**Reasoning**: Req 8.1 now asks for exactly this (ADR 0004 amendment, decision 11). `String.prototype.toLowerCase` applies Unicode's default lowercase mapping and does not depend on locale. It is deterministic within a session, which is all Req 8.3 needs, because identity is never stored or sent anywhere. For the owner's English tags it agrees with full case folding.
 
-**NFC baseline**: the supported browsers are the build's default target, Vite's "Baseline Widely Available" set, and that is the NFC baseline. NFC is deliberately not bundled. Tag Identity is never stored, serialized or sent anywhere. It is recomputed in one browser for one session, and every reader, warning and writer in that session uses the same runtime `normalize`, so Req 8.3's single contract holds within any session. Two browsers could differ only for a tag containing a character that was unassigned in the older browser's Unicode data and has a canonical decomposition. Even then they would disagree only about which identity to display for that session; no stored data would diverge. `scripts/generate-case-folding.ts` records the runtime Unicode version it was checked against, and `e2e/identity.spec.ts` runs the `tagIdentity` example table inside every Playwright browser project, so a supported browser whose NFC gives a different result fails the end-to-end suite.
-
-**Alternative Options**: `toLocaleLowerCase('und')`, which is rejected as not being case folding. Bundling a full NFC implementation adds weight but gains nothing for assigned characters.
+**Alternative Options**: A bundled Unicode 17 `CaseFolding.txt` table (the previous design). It is more correct for `ß` and final sigma, but costs a generator, a generated file and cross-browser identity tests.
 
 ### Decision 5: A hand-written YNAB client, typed from a pinned OpenAPI document
 
 **Outcome**: Types are generated with `openapi-typescript` (a dev dependency with no runtime code) from a committed copy of YNAB's OpenAPI document (v1.86.0). About 200 lines of hand-written code in `src/ynab/client.ts` perform the requests.
 
-**Reasoning**: The client must assert the destination origin, force `cache: 'no-store'`, `credentials: 'omit'` and `referrerPolicy: 'no-referrer'`, apply a 35-second abort timeout, and classify an interrupted write as an Unknown Outcome (Req 1.4, 1.11, 18.1). A tiny client makes those guarantees easy to audit. Bundled dependencies are part of the trusted computing base (Req 1.10), so fewer is better.
+**Reasoning**: The client must:
+- assert the destination origin
+- force `cache: 'no-store'`, `credentials: 'omit'` and `referrerPolicy: 'no-referrer'`
+- apply a 35-second abort timeout
+- classify failures (Req 1.4, 1.11, 18.1)
 
-**Alternative Options**: The official `ynab` JavaScript SDK. It is capable, but it adds bundled runtime code to the trusted computing base and puts the fetch options behind its own configuration layer.
+A tiny client keeps those guarantees auditable. Bundled dependencies are trusted code (Req 1.10), so fewer is better.
 
-### Decision 6: A delta read is the pre-write re-read
+**Alternative Options**: The official `ynab` JavaScript SDK, which adds bundled runtime code and hides the fetch options.
 
-**Outcome**: The "re-read" before each write batch, and the verification after it, are both a single transactions delta request (`last_knowledge_of_server`). They are not per-transaction `GET` requests.
+### Decision 6: A delta read is the pre-write re-read and the verification
 
-**Reasoning**: A delta returns every transaction changed since the session's knowledge cursor, so any transaction absent from it is unchanged. That re-reads the whole scope in one request, which Req 17.1 needs and the 200 requests/hour limit allows. Per-transaction reads would spend the hourly quota on a single 200-transaction rename.
+**Outcome**: The re-read before each write batch, and the verification after it, are each a single transactions delta request (`last_knowledge_of_server`), not per-transaction `GET`s.
 
-**Alternative Options**: A `GET /transactions/{id}` per planned transaction, which is exact but costs one request per transaction and is infeasible under the limit.
+**Reasoning**: A delta returns every transaction changed since the session's knowledge cursor, so anything absent is unchanged. One request re-reads the whole scope (Req 17.1) within the 200 requests/hour limit.
 
-### Decision 7: A request budget that fits 200 requests per hour
+**Alternative Options**: A `GET /transactions/{id}` per planned transaction, which is exact but spends the quota on one large rename.
 
-**Outcome**: Each 60-second check makes one transactions delta request. Accounts and categories are refreshed on every tenth check, on a manual Refresh, and whenever a delta references an unknown account or category ID. Background checks run only while the tab is visible and pause during writes, and write batches hold up to 50 transactions.
+### Decision 7: Refresh on demand and on return
 
-**Reasoning**: Steady state costs about 72 requests per hour, which leaves about 128 for loading, manual refreshes and writes. A write costs two requests per batch (a pre-read delta and a `PATCH`) plus one final verification, so a 500-transaction rename costs about 21 requests. A 429 is handled by the paused states the requirements already define (Req 4.7, 18.5), and the design adds no new low-quota behaviour.
+**Outcome**: There is no timer. Refresh runs in three cases:
+- when the user presses Refresh
+- when the tab becomes visible (`visibilitychange`)
+- when the user confirms an Impact Preview (Req 4.1, 4.3, 4.6)
 
-**Alternative Options**:
-- The plan-wide delta endpoint (`GET /plans/{id}`), which is one request for everything. It was rejected because it is undocumented whether it honours the v1.85.0 one-year default for transactions.
-- A local quota ledger that skips checks when quota is low. It was rejected because skipping checks would contradict the fixed 60-second cadence in Req 4.2.
+Each refresh is one transactions delta request. Accounts and categories are re-read on a manual Refresh and whenever a delta references an unknown account or category ID. No refresh starts while a Write Operation runs (Req 4.4).
 
-### Decision 8: Split a batch after a whole-batch rejection
+**Reasoning**:
+- **Who edits:** one person editing their own budget. The usual change is "I edited in YNAB, then switched back to Ynot", which the return-to-tab check covers.
+- **Safety without polling:** the confirm-time re-plan and the per-batch pre-read already keep writes safe.
+- **Quota:** usage is driven by the user, at a few requests per minute at most, so no request budget is needed.
 
-**Outcome**: If a `PATCH` batch returns 400, the engine runs a delta verify and classifies each item on its own before splitting anything, the same way it classifies an Unknown Outcome:
+**Alternative Options**: 60-second polling with a request budget (the previous design), rejected as machinery without a matching need (decision 9).
 
-- A transaction the delta marks `deleted` becomes `skipped: gone` and leaves the batch. This is checked first, because the merge removes it and it has no memo to compare.
-- A memo equal to `after` becomes `completed` and leaves the batch.
-- A memo equal to neither `before` nor `after` becomes `skipped: conflictMemo`.
-- Only items still at `before` stay in the batch. The engine splits them in half and resubmits each half after a fresh conflict check, until single transactions are isolated.
+### Decision 8: Writes stop, verify and report
 
-An isolated 400 becomes `skipped: rejected` (the length case, Req 12.8) or `failed`.
+**Outcome**: On any write failure (a non-success response, a 200 whose returned memo is not `after`, a network loss, a timeout or a 429), the engine:
+1. sends nothing further for that operation;
+2. runs one delta verify;
+3. classifies every item in scope as `done`, `unchanged` or `conflict`.
 
-**Reasoning**: YNAB documents no per-item failure contract for bulk updates, and no all-or-nothing guarantee either. So a rejected batch cannot be assumed to have saved nothing. Classifying each item first keeps confirmed successes (Req 17.7) and never resends an item that already landed. Without splitting, one over-long memo would fail 49 valid writes and break Req 12.7's promise not to block eligible transactions. The resubmitted items never failed individually and are re-checked against the confirmed preview, so this is not the blind retry that Req 17.8 forbids. One bad item costs about 12 requests.
+Continuing is a fresh plan of what remains, built from the Operation Results (Req 6.7, 18.7). A final delta verify runs after the last batch even when every response looked correct, so the results and the undo slot reflect what YNAB actually holds.
 
-**Alternative Options**: Failing the whole batch and sending everything to Select for review. It is simple, but it turns one bad memo into 50 failures.
+**Reasoning**: This is ADR 0007. Batch splitting, pause and Resume, persistent cancel, kind-change detection and remaining-work tracking all automated recovery from rare events. None of them added protection against memo loss. A re-run is safe because planning excludes transactions that already carry the change, and the recheck skips anything that moved.
+
+**Alternative Options**: The previous pause/Resume state machine. That includes Decision 8's batch splitting, which isolated one over-long memo from 49 valid ones at the cost of about 12 requests and a recursive splitter. Under this design such a batch is verified, and the unchanged items return to review, where the fit check runs again.
 
 ### Decision 9: No URL routing; view state lives only in memory
 
-**Outcome**: The app is served at a single path. Views (connect, pick budget, register, tag reader) and the Active Account, open tag and filters are in-memory state, and the history API is never used.
+**Outcome**: The app is served at a single path. Views, the Register scope, the open tag and filters are in-memory state, and the history API is never used.
 
-**Reasoning**: Req 1.3 forbids financial data in URLs, and account names, tag spellings and search text all count. Reload already ends the session (Req 2.2), so deep links would have nothing to restore.
+**Reasoning**: Req 1.3 forbids financial data in URLs, and account names, tag spellings and search text all count.
 
-**Alternative Options**: A hash router carrying opaque IDs. Even opaque plan and account IDs would reach browser history, and there is no value to preserve across a reload.
+**Alternative Options**: A hash router carrying opaque IDs. Even opaque IDs would reach browser history.
 
 ### Decision 10: React Aria Components for accessible primitives
 
-**Outcome**: The UI is built on `react-aria-components`: GridList, ListBox, Dialog, Toast, Menu, Tabs and Checkbox, styled with CSS Modules. Long lists use `@tanstack/react-virtual`.
+**Outcome**: The UI is built on `react-aria-components`: GridList, Table, ListBox, ComboBox, Dialog, Toast, Tabs and Checkbox, styled with CSS Modules and system fonts. Long lists use `@tanstack/react-virtual`.
 
-**Reasoning**: Req 20 needs keyboard operation, screen-reader semantics, non-focus-stealing announcements (Req 6.5) and modal focus management on desktop and phone. Hand-rolling those patterns is where accessibility regressions come from. Both libraries run with no inline scripts or `eval`. CSS Modules compile to external stylesheets, which satisfies `style-src 'self'`.
+**Reasoning**:
+- **Roles and names:** Req 20.2 needs every control and status to carry a semantic role and accessible name. React Aria supplies these by default, and the end-to-end tests rely on them through `getByRole`.
+- **CSP:** both libraries run with no inline scripts or `eval`, and CSS Modules compile to external stylesheets.
 
-**Alternative Options**: Radix UI, which is also good but has no grid or virtualised-collection primitives. Hand-rolled ARIA was rejected on regression risk.
+**Alternative Options**: Radix UI, which has no grid or virtualised-collection primitives.
 
 ### Decision 11: Recompute derived indexes in full, with memoised memo parsing
 
-**Outcome**: After any data change (load, delta, write), the Tag Index, warnings and register counts are recomputed from the whole transaction set. Memo parses are cached in a `Map<string, ParsedMemo>` keyed by raw memo text.
+**Outcome**: After any data change (load, delta, write), the Tag Index, markers and register counts are recomputed from the whole transaction set. Memo parses are cached in a `Map<string, ParsedMemo>` keyed by raw memo text.
 
-**Reasoning**: Budgets have thousands to tens of thousands of transactions, and a linear pass with cached parses takes milliseconds. Full recomputation makes Property 19 (a delta-merged state matches a fresh full read) true by construction, with no incremental bookkeeping to get wrong.
+**Reasoning**: Budgets have thousands to tens of thousands of transactions, and a linear pass with cached parses takes milliseconds. Full recomputation makes Property 18 (a delta-merged state matches a fresh full read) true by construction.
 
-**Alternative Options**: Incremental index maintenance per delta. It is faster in theory, but it creates a second code path whose bugs would silently skew Tag Totals.
+**Alternative Options**: Incremental index maintenance per delta, which creates a second code path whose bugs would silently skew Tag Totals.
 
-### Decision 12: Warning order and tidy scope
+### Decision 12: A remembered PAT lives behind one module
 
-**Outcome**: Warnings are ordered as follows:
+**Outcome**: `src/session/patStorage.ts` is the only code that touches `localStorage`. It reads, writes and deletes one key, `ynot.pat`. Lint bans web-storage globals everywhere else.
 
-1. Spelling variants of one identity.
-2. Near-duplicate Pairs.
-3. Cleanup (repeated tag or extra markers).
-4. Single-use, in its own lower section.
+**Reasoning**: ADR 0006 and Req 2.9–2.10. One module with three functions keeps the storage surface easy to audit and test. The CSP and the absence of third-party scripts protect the stored token.
 
-Within a section, entries sort by affected Transaction count (descending), then Canonical Spelling by code point. Tidy runs per Tag Identity, from that tag's warning or header.
-
-**Reasoning**: Req 14.3–14.4 fix only the duplicate-over-cleanup and duplicate-over-single-use boundaries. The requirements review deferred the full deterministic order to this design. Cleanup ranks above single-use because it is guaranteed safe and permanent (ADR 0004). Per-tag tidy matches ADR 0004's "same shape as a global rename" and the one-tag-open rail (ADR 0003).
-
-**Alternative Options**: A single budget-wide "tidy everything" operation. It is broader than any other management action and would crowd the one-operation-per-preview model.
+**Alternative Options**:
+- `sessionStorage`: it would not survive closing the tab, so it removes little friction.
+- IndexedDB: more machinery for one string.
 
 ## Architecture
 
@@ -172,11 +207,11 @@ flowchart TD
     subgraph Client[Client - browser tab]
         UI(React UI)
         SS[Session Store]
-        RS[Refresh Scheduler]
-        IL[Idle Lock]
         WE[Write Engine]
         DOM[Domain Core]
         YC[YNAB Client]
+        PS[PAT Storage]
+        LS[(localStorage)]
     end
 
     subgraph Static[Static host - Vercel]
@@ -187,72 +222,84 @@ flowchart TD
         API[YNAB API]
     end
 
-    ASSETS -->|index.html, JS, CSS, fonts + CSP| UI
-    UI -->|user intents| SS
-    IL -->|lock: clear session| SS
-    RS -->|delta results| SS
+    ASSETS -->|index.html, JS, CSS + CSP| UI
+    UI -->|user intents, refresh, visibility| SS
+    SS -->|remember / forget PAT| PS
+    PS -->|ynot.pat| LS
     SS -->|transactions| DOM
-    DOM -->|tag index, warnings, plans| SS
+    DOM -->|tag index, markers, plans| SS
     SS -->|snapshots| UI
-    UI -->|confirmed plan, cancel, resume| WE
+    UI -->|confirmed plan, cancel, verify again| WE
     WE -->|pre-read, PATCH, verify| YC
-    RS -->|delta GET| YC
+    SS -->|load, delta GET| YC
     YC -->|Bearer PAT, no-store| API
     API -->|JSON + server_knowledge| YC
-    WE -->|outcomes, history| SS
+    WE -->|results, undo slot| SS
 ```
 
-The static host serves only public assets and never receives the PAT or financial data. Every YNAB request goes through `YnabClient`, which is the only holder of the PAT.
+The static host serves only public assets and never receives the PAT or financial data. Every YNAB request goes through `YnabClient`.
 
 ### Session lifecycle
 
-1. **Connect**: the user pastes a PAT. `YnabClient` is created with it, and `GET /plans?include_accounts=false` both validates the token and lists plans (Req 3.1, 3.7–3.8).
-2. **Choose Budget**: a new `BudgetSession` is created, and three requests run in parallel: `GET /plans/{id}/accounts`, `GET /plans/{id}/categories`, and `GET /plans/{id}/transactions?since_date=<first_month>`. Until all three succeed, the UI shows loading state and no vocabulary or totals (Req 3.2, 3.6).
-3. **Windowed fallback**: if the full transactions request times out or returns 503, the engine reloads in yearly windows (`since_date` plus `until_date`) from `first_month` to today. It stores the **minimum** `server_knowledge` across windows as the cursor, so the first delta covers changes made while windows loaded, and merging is idempotent by ID.
-4. **Browse**: the domain derives the register, Tag Index and warnings, and the Refresh Scheduler starts.
-5. **Refresh**: see Decision 7. A delta is merged into the transaction map (upsert by ID, drop `deleted` transactions, and for each returned parent replace its subtransactions with the non-deleted ones), then derived state is recomputed (Req 3.5, 4.5).
-6. **End**: Disconnect, idle lock or reload drops the `YnabClient` and `BudgetSession` references and aborts in-flight fetches locally (a sent request may still land, Req 2.6–2.7). The store resets to `disconnected`. A budget switch drops only `BudgetSession`, and is blocked while an operation is unfinished (Req 3.9–3.10).
+1. **Connect**: either the user pastes a PAT (with `Remember on this device` unticked by default), or a Remembered PAT is found on start-up. `YnabClient` is created, and `GET /plans?include_accounts=false` both validates the token and lists plans. If the user ticked Remember, the PAT is saved only after this call succeeds (Req 2.9, 3.1, 3.7–3.8). A 401 deletes any Remembered PAT and explains why (Req 2.10).
+2. **Choose Budget**: a new `BudgetSession` is created with its own `AbortController`. Three requests run in parallel: `GET /plans/{id}/accounts`, `GET /plans/{id}/categories` and `GET /plans/{id}/transactions?since_date=<first_month>`. Until all three succeed, the UI shows loading state and no vocabulary or totals. A failure offers Retry and Disconnect (Req 3.2, 3.6–3.7).
+3. **Browse**: the domain derives the Tag Index, the markers and, from slice 2, the register.
+4. **Refresh**: per Decision 7. A delta is merged into the transaction map: upsert by ID, drop `deleted` transactions, and for each returned parent, replace its subtransactions with the non-deleted ones. Derived state is then recomputed (Req 3.5, 4.5).
+5. **Switch budget**: the Budget Session's controller is aborted and the session is dropped. The store then returns to `choosingBudget` with a fresh plan list, keeping the client and any Remembered PAT. This is blocked while a Write Operation is unfinished or unverified (Req 3.9–3.10).
+6. **End**: Disconnect deletes the Remembered PAT, disposes the client and drops the session. Reload or tab closure drops the session but leaves a Remembered PAT. A sent request may still land in YNAB (Req 2.2, 2.6–2.7).
+
+**Stale-result guard**: every request made for a Budget Session passes that session's `signal`. The store applies a result only if the `BudgetSession` object that issued it is still the current one (reference equality). A response that was already resolving when the session ended is therefore discarded. Applying a result is atomic: there are no partial merges.
 
 ### Write flow
 
 ```text
-Plan (domain) ─▶ Impact Preview ─▶ confirm ─▶ fixed scope
+Plan (domain) ─▶ Impact Preview ─▶ Confirm
+  confirm-time refresh: delta read, merge, replan(request)
+     planDiffers → replace the preview, show "changed since you reviewed it", write nothing (Req 4.6)
+  fixed scope = confirmed plan's changes
   for each batch (≤50):
      [cancel requested?] → stop
-     delta pre-read → [replan(request).kind ≠ plan.kind?] → skip every remaining item (conflictEligibility), finish
-     recheck each item against plan (memo + fingerprint)
-        conflicts → skipped(conflict)
-     [cancel requested during pre-read?] → stop; this batch stays unattempted
-     PATCH remaining items {id, memo, approved}
-        200 → verify returned memos; saved ≠ after or missing → delta verify
-        400 → delta verify, classify each item → split only items still at before (Decision 8)
-        429 → pause(rateLimited)                       (response received: nothing uncertain)
-        network loss / timeout / 5xx → pause(unknownOutcome) → auto delta verify
-     pre-read fails → pause(connection)                (nothing sent in this batch: no write in doubt)
-     verify read after a sent PATCH fails → pause(unknownOutcome); unconfirmed items stay unknown
-  final delta verify → results → undo history entry → clear selection
+     delta pre-read → recheck each item: gone | memo ≠ before | replanned after ≠ after → conflict (with reason)
+     PATCH remaining items {id, memo: after, approved: current.approved}
+        200 and every returned memo = after → continue
+        anything else → stop
+  verify: one delta read → classify every item still pending or sent
+        memo = after → done · memo = before → unchanged · otherwise or deleted → conflict
+        verify read fails → operation is unverified: Unknown Outcome, Verify again, writes blocked
+  results → undo slot = this operation's done changes → clear selection
 ```
+
+### Build slices
+
+| Slice | Delivers | Main modules |
+|---|---|---|
+| **1. Read-only tag reader** (first usable) | Connect with optional remember, budget choice, full load, refresh, Tag Overview, Tag reader with Contributions and transfer pairs, warning markers | `domain/grammar`, `domain/tags`, `ynab/*`, `session/store`, `session/patStorage`, UI: `ConnectScreen`, `BudgetPicker`, `AppShell`, `TagOverview`, `TagRail`, `TagReader` |
+| **2. Register and tagging** | All accounts and per-account Register, filters, selection, tag picker, apply/remove, write engine, Operation Results, undo last | `domain/register`, `domain/memo`, `domain/operations`, `writes/*`, UI: `AccountRail`, `RegisterToolbar`, `RegisterGrid`, `TransactionInspector`, `SelectionBar`, `TagPicker`, `ImpactPreview`, `OperationResults` |
+| **3. Vocabulary management** | Rename, merge-on-rename and delete from the Tag reader, and near-duplicate marker actions | `domain/operations` (rename/merge/delete), UI: `RenameDialog`, `TagReader` header actions |
+| **4. Release** | Vercel project, production headers check, live walkthroughs | `vercel.json`, release checklist |
+
+The contract checks (see Testing Strategy) run before slice 2 writes anything.
 
 ### Layer Placement
 
 | Concern | Layer | Location |
 |---|---|---|
-| Hashtag grammar, Tag Identity, case folding | Domain | `src/domain/grammar/` |
-| Membership, Canonical Spelling, Tag Totals, transfer pairs | Domain | `src/domain/tags/` |
-| Vocabulary Warnings, near-duplicates | Domain | `src/domain/tags/warnings.ts` |
-| Register filters, search, counts, selection rules | Domain | `src/domain/register/` |
-| Memo rewriting (apply/remove/rename/tidy) and fit check | Domain | `src/domain/memo/` |
-| Operation planning, conflict fingerprints, undo planning | Domain | `src/domain/operations/` |
+| Hashtag grammar, Tag Identity, tag text validation | Domain | `src/domain/grammar/` |
+| Membership, Contributions, Canonical Spelling, Tag Totals, transfer pairs | Domain | `src/domain/tags/tagIndex.ts` |
+| Near-duplicate and single-use markers | Domain | `src/domain/tags/markers.ts` |
+| Register scope, filters, search, counts | Domain | `src/domain/register/` |
+| Memo rewriting (apply/remove/rename) and fit check | Domain | `src/domain/memo/` |
+| Operation planning, recheck, undo planning | Domain | `src/domain/operations/` |
 | HTTP client, network boundary, error classification | YNAB adapter | `src/ynab/client.ts`, `src/ynab/errors.ts` |
-| Initial load, windowing, delta merge | YNAB adapter | `src/ynab/load.ts`, `src/ynab/delta.ts` |
+| Initial load, mapping, delta merge | YNAB adapter | `src/ynab/load.ts`, `src/ynab/map.ts`, `src/ynab/delta.ts` |
 | Generated API types | YNAB adapter | `src/ynab/openapi.generated.ts` (from `openapi/ynab-1.86.0.yaml`) |
-| Session store, Budget Session, refresh, idle lock | Session runtime | `src/session/` |
-| Write engine, undo history | Session runtime | `src/writes/` |
-| Screens, rails, register, reader, dialogs | UI | `src/ui/` |
+| Session store, Budget Session, refresh on return | Session runtime | `src/session/store.ts`, `src/session/refreshOnReturn.ts` |
+| Remembered PAT | Session runtime | `src/session/patStorage.ts` |
+| Write engine, undo slot | Session runtime | `src/writes/` |
+| Screens, rails, overview, register, reader, dialogs | UI | `src/ui/` |
 | Deployment headers | Deployment | `vercel.json` |
-| Build and deploy guards | Tooling | `scripts/check-build-csp.ts`, `scripts/verify-deployment-headers.ts`, `scripts/generate-case-folding.ts` |
-| Fake YNAB simulator | Test | `test/fake-ynab/` |
-| End-to-end, accessibility, CSP tests | Test | `e2e/` |
+| Fake YNAB for tests | Test | `test/fakeYnab.ts` |
+| End-to-end, accessibility and boundary tests | Test | `e2e/` |
 
 ## Components and Interfaces
 
@@ -271,8 +318,6 @@ export interface TagToken {
   /** NFC form of `raw`; the unit of spelling comparison. */
   readonly spelling: string;
   readonly identity: TagIdentity;
-  /** Number of `#` markers (≥2 means extra markers). */
-  readonly markerCount: number;
 }
 
 export interface ParsedMemo {
@@ -286,7 +331,7 @@ export function parseMemo(memo: string | null): ParsedMemo;
 
 The parser walks the memo by code point:
 
-1. A `#` is a candidate when it sits at the start of the memo, or when the previous code point is neither `\` nor in `\p{L}` or `\p{N}`. If the previous code point is a combining mark (`\p{M}`), the test applies to the base character of its sequence, so decomposed `é#tag` is rejected exactly like precomposed `é#tag` (Req 7.1, ADR 0004). A mark with no base character (at the memo start) is treated as the memo start.
+1. A `#` is a candidate when it sits at the start of the memo, or when the previous code point is neither `\` nor in `\p{L}` or `\p{N}`. If the previous code point is a combining mark (`\p{M}`), the test applies to the base character of its sequence, so decomposed `é#tag` is rejected exactly like precomposed `é#tag` (Req 7.1). A mark with no base character is treated as the memo start.
 2. Consecutive extra `#` markers are consumed.
 3. The token runs to the next `\p{White_Space}` or the end of the memo.
 4. Trailing `\p{Po}`, `\p{Pe}` and `\p{Pf}` are trimmed.
@@ -299,15 +344,16 @@ The parser walks the memo by code point:
 ```typescript
 export type TagIdentity = string & { readonly __brand: 'TagIdentity' };
 
-/** NFC, then Unicode 17.0.0 full default case folding (C+F, no T). Locale-independent. */
+/** NFC, then the default Unicode lowercase mapping. Locale-independent (Decision 4). */
 export function tagIdentity(text: string): TagIdentity;
-export const CASE_FOLDING_UNICODE_VERSION = '17.0.0';
 
 /** Validates user-entered tag text for apply/rename: exactly one token, whole string, no trimming. */
-export function validateTagText(text: string): { ok: true; spelling: string } | { ok: false; reason: 'empty' | 'digitsOnly' | 'whitespace' | 'trailingPunctuation' | 'marker' };
+export function validateTagText(text: string):
+  | { ok: true; spelling: string }
+  | { ok: false; reason: 'empty' | 'digitsOnly' | 'whitespace' | 'trailingPunctuation' | 'marker' };
 ```
 
-`validateTagText` guarantees that a written tag reads back as exactly the spelling the user entered (Req 12.2, 13.1).
+`validateTagText` guarantees that a written tag reads back as exactly the spelling entered (Req 12.2, 12.11, 13.9). It accepts text with or without one leading `#`, and rejects anything `parseMemo` would not read back as a single whole token.
 
 ### `src/domain/tags/tagIndex.ts`
 
@@ -321,115 +367,100 @@ export interface TagIndex {
 export interface TagEntry {
   readonly identity: TagIdentity;
   readonly canonicalSpelling: string;
-  /** Spelling → count of distinct Transactions carrying it (parent or split). */
-  readonly spellings: ReadonlyMap<string, SpellingUse>;
-  readonly members: readonly TransactionId[];
-  /** Members whose occurrences are only in split memos (read-only). */
-  readonly splitOnlyMembers: ReadonlySet<TransactionId>;
-  /** Members with at least one parent-memo occurrence (writable). */
-  readonly parentMembers: ReadonlySet<TransactionId>;
-  readonly splitOccurrenceCount: number;
+  /** Spelling → distinct Transactions carrying it (parent or split) and the earliest date among them. */
+  readonly spellings: ReadonlyMap<string, { transactionCount: number; earliestDate: IsoDate }>;
+  readonly members: readonly Member[];
+  readonly parentMembers: ReadonlySet<TransactionId>;     // writable
+  readonly splitOnlyMembers: ReadonlySet<TransactionId>;  // read-only
+  readonly splitOccurrenceCount: number;                  // occurrences in split memos (unreachable by writes)
   readonly total: TagTotal;
-  readonly cleanup: {
-    readonly repeatedIn: readonly CleanupSite[];
-    readonly extraMarkersIn: readonly CleanupSite[];
-  };
 }
 
-export interface SpellingUse {
-  readonly transactionCount: number;
-  /** Transactions carrying this spelling in the parent memo (reachable by respell). */
-  readonly parentTransactionCount: number;
-  /** Transactions carrying this spelling in at least one split memo, whether or not the parent also has it. */
-  readonly splitTransactionCount: number;
-  /** Occurrences of this spelling in split memos; these survive a respell. */
-  readonly splitOccurrenceCount: number;
-  readonly earliestDate: IsoDate;
-}
-
-/**
- * Where a cleanup issue occurs in one transaction. Issues are detected within each memo on its own:
- * a tag repeats only when one memo holds it twice. One occurrence in the parent plus one in a split is not a repeat.
- */
-export interface CleanupSite {
+export interface Member {
   readonly transactionId: TransactionId;
-  readonly inParent: boolean;   // the parent memo itself repeats the tag or has extra markers (tidyable)
-  readonly inSplits: boolean;   // some split memo itself repeats the tag or has extra markers (read-only)
+  readonly source: 'parent' | 'splits';
+  /** Contributing amounts: [parent amount], or the amount of each tagged split line. */
+  readonly contributingAmounts: readonly { subtransactionId: string | null; amount: number }[];
+  readonly contribution: number; // sum of contributingAmounts
 }
 
 export interface TagTotal {
   readonly netMilliunits: number;
-  readonly outflowMilliunits: number; // ≤ 0
-  readonly inflowMilliunits: number;  // ≥ 0
+  readonly outflowMilliunits: number; // sum of negative contributing amounts, ≤ 0
+  readonly inflowMilliunits: number;  // sum of positive contributing amounts, ≥ 0
   readonly memberCount: number;
-  readonly outsideActiveAccountCount: (activeAccountId: AccountId) => number;
   readonly transferPairs: readonly TransferPair[];
 }
 
-export function buildTagIndex(transactions: ReadonlyMap<TransactionId, Transaction>, parse: (memo: string | null) => ParsedMemo): TagIndex;
+export interface TransferPair { readonly a: TransactionId; readonly b: TransactionId; }
+
+export function buildTagIndex(
+  transactions: ReadonlyMap<TransactionId, Transaction>,
+  parse: (memo: string | null) => ParsedMemo,
+): TagIndex;
 ```
 
 The rules this index implements:
 
 - **Membership** is the union of identities from the parent memo and every non-deleted subtransaction memo, and it is a set (Req 9.1–9.2).
+- **Contribution** (Req 10.1–10.3, ADR 0005 amendment):
+  - If the identity occurs in the parent memo, the contributing amounts are `[parent.amount]`.
+  - Otherwise they are the `amount` of each non-deleted subtransaction whose memo carries the identity.
+  - A subtransaction that carries the tag twice counts once.
+- **Totals**: `net` is the sum of member contributions. `outflow` and `inflow` partition the contributing amounts by sign, and `memberCount` is the number of members.
 - **Canonical Spelling** has the greatest `transactionCount`, then the earliest `earliestDate`, then the lowest code-point order (Req 8.4–8.7).
-- **Tag Totals** sum the full parent `amount` once per member (Req 10.1–10.4).
-- **Transfer pairs** are found by mapping each parent ID, and each subtransaction ID, to its parent. Two members form a pair when one member's `transfer_transaction_id` (on the parent or a subtransaction) resolves to the other (Req 10.5–10.6).
+- **Transfer pairs**: each parent ID and each subtransaction ID is mapped to its parent transaction. Two members form a pair when a `transfer_transaction_id` on one of them, whether on the parent or on a subtransaction, resolves to the other (Req 10.5–10.6).
+- **Outside-account count** (Req 10.7, 16.3) is computed by the UI from `members` and the Register's current account; it is not stored in the index.
 
-### `src/domain/tags/warnings.ts`
+### `src/domain/tags/markers.ts`
 
 ```typescript
-export type VocabularyWarning =
-  | { kind: 'spellingVariants'; identity: TagIdentity; spellings: readonly SpellingChoice[] }
-  | { kind: 'nearDuplicate'; pairKey: PairKey; a: TagIdentity; b: TagIdentity; directions: readonly MergeDirection[] }
-  | { kind: 'cleanup'; identity: TagIdentity; tidyableTransactionCount: number; readOnlyTransactionCount: number }
-  | { kind: 'singleUse'; identity: TagIdentity };
+export interface TagMarkers {
+  /** Other identities sharing this identity's near-duplicate key, sorted by code point. */
+  readonly nearDuplicateOf: readonly TagIdentity[];
+  readonly singleUse: boolean;
+}
 
-export interface SpellingChoice { readonly spelling: string; readonly transactionCount: number; readonly parentWritableCount: number; readonly splitTransactionCount: number; readonly remainingInSplitsCount: number; readonly isCanonical: boolean; }
-export interface MergeDirection { readonly keep: TagIdentity; readonly rewrite: TagIdentity; readonly rewritableCount: number; readonly remainingInSplitsCount: number; }
-
-export function nearDuplicateKey(identity: TagIdentity): string; // remove literal '-' and '_'
-export function deriveWarnings(index: TagIndex, dismissed: ReadonlySet<PairKey>): {
-  readonly attention: readonly VocabularyWarning[]; // ordered per Decision 12
-  readonly singleUse: readonly VocabularyWarning[];
-  readonly markers: ReadonlyMap<TagIdentity, readonly VocabularyWarning['kind'][]>;
-};
+/** Remove literal '-' and '_'. */
+export function nearDuplicateKey(identity: TagIdentity): string;
+export function deriveMarkers(index: TagIndex): ReadonlyMap<TagIdentity, TagMarkers>;
 ```
 
-- **Near-duplicate Pairs** are every pair of distinct identities that share a nonempty key. A group of three identities yields three pairs, and pair keys sort the two identities by code point (Req 15.1–15.4).
-- **Merge directions** are offered only when `rewritableCount > 0`. When neither direction qualifies, the warning offers an explanation and dismissal only (Req 15.9–15.11).
-- **Cleanup** warnings appear for any memo that repeats a tag or has extra markers. `tidyableTransactionCount` counts **distinct** `transactionId`s with `inParent` across `repeatedIn` and `extraMarkersIn` together. `readOnlyTransactionCount` counts distinct `transactionId`s with `inSplits` in either list and `inParent` in neither. A memo such as `##Tax #Tax` appears in both lists but counts once (Req 14.4, 14.6).
-- **Spelling choices** take `parentWritableCount` from `SpellingUse.parentTransactionCount`, not from the identity-wide `parentMembers`. A transaction with `#tax` in its parent and `#Tax` only in a split is writable for `tax` and read-only for `Tax`. `splitTransactionCount` and `remainingInSplitsCount` come from the same per-spelling fields. So a spelling carried in both a parent and a split of one transaction still shows the split occurrence that a respell will leave behind (Req 13.4).
-- **Provenance is kept per spelling and per cleanup site** because `deriveWarnings` sees only the index. Identity-wide member sets cannot tell those cases apart.
+- **Near-duplicates** are every pair of distinct identities that share a nonempty key. Detection includes tags found only in split memos (Req 15.1–15.4, 15.9).
+- **Single-use** means `memberCount === 1` (Req 14.2).
+- **Order**: the UI always shows the near-duplicate marker before the single-use marker (Req 14.3).
+- **Advisory only**: markers create no plan and no write (Req 14.5).
 
 ### `src/domain/register/register.ts`
 
 ```typescript
+export type RegisterScope = { kind: 'account'; accountId: AccountId } | { kind: 'all' };
+
 export interface RegisterFilters {
   readonly search: string;
   readonly categoryIds: ReadonlySet<CategoryId>;
   readonly categoryGroupIds: ReadonlySet<CategoryGroupId>;
   readonly statuses: ReadonlySet<'uncleared' | 'cleared' | 'reconciled'>;
-  readonly tags: ReadonlySet<TagIdentity>;
-  readonly tagMatch: 'all' | 'any';
+  readonly tag: TagIdentity | null;
 }
 
 export interface RegisterView {
-  readonly rows: readonly RegisterRow[];            // date desc, then id; complete account history
+  readonly rows: readonly RegisterRow[];          // date desc, then id; complete history of the scope
   readonly matchingCount: number;
   readonly totalCount: number;
-  readonly yearIndex: ReadonlyMap<number, number>;  // year → first row index (position, not scope)
-  readonly tagFacetCounts: ReadonlyMap<TagIdentity, number>; // active account, after the other filters
-  readonly accountCounts: ReadonlyMap<AccountId, { matching: number; total: number }>;
+  readonly tagFacetCounts: ReadonlyMap<TagIdentity, number>; // within scope, after the non-tag filters
+  readonly scopeCounts: ReadonlyMap<'all' | AccountId, { matching: number; total: number }>;
 }
 
-export function buildRegister(input: { transactions; accounts; categories; index: TagIndex; activeAccountId: AccountId; filters: RegisterFilters }): RegisterView;
-export function filtersChangeClearsSelection(prev: RegisterFilters, next: RegisterFilters): boolean;
+export function buildRegister(input: {
+  transactions; accounts; categories; index: TagIndex; scope: RegisterScope; filters: RegisterFilters;
+}): RegisterView;
 ```
 
-- **Search** folds the query and matches it against the folded payee, category, category group and prose memo text of the parent and its splits.
+- **Search** lowercases the query and matches it against the lowercased payee, account, category, category group and prose memo text of the parent and its splits.
 - **Category and category-group facets** also match split children.
-- **Tag facet counts** are computed against every other active filter. A tag's count is the number of Active Account transactions that carry the tag and match the search, category, category-group and status filters. Under Match all, they must also carry every other selected tag. Under Match any, other selected tags do not narrow the count. So the count always equals the number of rows carrying that tag in the view you get with that tag selected, and with it alone selected when no other tag filter is set (Req 5.4–5.10).
+- **Tag facet counts** are computed within the scope against the search, category, category-group and status filters. Because the tag facet selects one tag at a time, a facet's count equals the rows shown when it is selected (Req 5.4–5.5, 5.9).
+- **All accounts** rows carry the account name (Req 5.12).
 
 ### `src/domain/memo/rewrite.ts`
 
@@ -437,103 +468,93 @@ export function filtersChangeClearsSelection(prev: RegisterFilters, next: Regist
 export const MEMO_LIMIT_CODE_POINTS = 500;
 
 export function applyTag(memo: string | null, spelling: string): string;
-export function removeIdentity(memo: string | null, identity: TagIdentity): string;
-export function renameIdentity(memo: string | null, from: TagIdentity, toSpelling: string): string;
-export function respell(memo: string | null, identity: TagIdentity, toSpelling: string): string;
-export function tidyIdentity(memo: string | null, identity: TagIdentity): string;
-export function fits(memo: string): boolean; // [...memo].length ≤ 500
+export function removeIdentity(memo: string | null, identity: TagIdentity): string | null;
+export function renameIdentity(memo: string | null, from: TagIdentity, toSpelling: string): string | null;
+export function fits(memo: string | null): boolean; // [...memo].length ≤ 500
 ```
 
-Rewrite rules. Every function works on raw memo text, touches only tag spans, and processes tokens from right to left:
+Rewrite rules. Every function works on raw memo text, touches only tag spans, and processes tokens from right to left.
 
-- **Apply**: an empty or `null` memo becomes `#spelling`. Otherwise the result is `memo + " #" + spelling`, with nothing reordered (Req 12.2).
-- **Remove a span** `[markerStart, textEnd)`. Let L be the whitespace run immediately before the span and R the run immediately after it:
-  - At the memo start, if R is nonempty, also drop R's first code point.
-  - At the memo end, if L is nonempty, also drop L's last code point.
-  - When both are nonempty, drop L's last code point. The exception: if L's last code point is a line break and R's first is not, drop R's first instead.
-  - When only one side is whitespace, in the middle of the memo, drop nothing extra.
+**Apply.** An empty or `null` memo becomes `#spelling`. Otherwise the result is `memo + " #" + spelling`, with nothing reordered (Req 12.2).
 
-  Trailing punctuation that was trimmed from the token stays in place. This fixes the prototype's `·` defect: `shop #Tag · Club` becomes `shop · Club` (Req 12.4).
-- **Rename** replaces the text `[textStart, textEnd)` of each matching token and keeps its markers. When the source and target are **distinct** identities (a merge) and the parent memo already contains the target identity, the source occurrence is removed instead of renamed, so a merge never creates a repeat (Req 13.2–13.3). When the target spelling has the **same** identity as the source (for example `#tax` to `#Tax`), `planRename` routes to `planRespell`, and occurrences are always rewritten, never removed.
-- **Respell** uses the same span replacement as rename for spelling variants of one identity (Req 13.4–13.5).
-- **Tidy** reduces every token of the identity to one marker, and removes the second and later occurrences in that memo with the gap rule (Req 13.6).
-- **Empty memos**: a rewrite whose result is empty returns `null`, never `""`. The rewriters never compare memos for conflicts; that is `recheck`'s job, and it compares exactly (see `src/ynab/map.ts`).
+**Remove a span `[markerStart, textEnd)`.** Let L be the whitespace run immediately before the span and R the run immediately after it.
+
+| Where the span sits | Whitespace to drop |
+|---|---|
+| At the memo start, with R nonempty | R's first code point |
+| At the memo end, with L nonempty | L's last code point |
+| Between whitespace on both sides | L's last code point, unless L's last code point is a line break and R's first is not; then R's first |
+| In the middle, with whitespace on one side only | nothing extra |
+
+Trailing punctuation that was trimmed from the token stays in place, so `shop #Tag · Club` becomes `shop · Club` (Req 12.4).
+
+**Rename** replaces the text `[textStart, textEnd)` of each matching token and keeps its markers.
+- **Merge:** when the source and target are **distinct** identities and the parent memo already contains the target, the source occurrence is removed instead of renamed, so a merge never creates a repeat (Req 13.2–13.3).
+- **Respelling:** when the target spelling has the **same** identity as the source (for example `#tax` to `#Tax`), every occurrence is rewritten and none is removed.
+
+**Empty results.** A rewrite whose result is empty returns `null`, never `""`. The rewriters never compare memos; `recheck` and verification do, exactly.
 
 ### `src/domain/operations/plan.ts`
 
 ```typescript
-export type OperationKind = 'apply' | 'remove' | 'rename' | 'merge' | 'delete' | 'respell' | 'tidy' | 'undo';
+export type OperationKind = 'apply' | 'remove' | 'rename' | 'merge' | 'delete' | 'undo';
 
 export interface PlannedChange {
   readonly transactionId: TransactionId;
   readonly accountId: AccountId;
-  readonly before: string | null;       // raw memo at planning time
+  readonly before: string | null;   // raw memo at planning time
   readonly after: string | null;
-  readonly fingerprint: EligibilityFingerprint;
-  /** True when this change alters the set of identities the transaction is a member of (parent `after` plus split memos). */
-  readonly changesMembership: boolean;
 }
 
-export interface EligibilityFingerprint {
-  readonly accountId: AccountId;
-  readonly amount: number;
-  /** Every tag token in non-deleted split memos: subtransaction ID, spelling, marker count, occurrence index. Sorted. */
-  readonly splitTokens: readonly { subtransactionId: string; spelling: string; markerCount: number; occurrence: number }[];
-  readonly subtransactionIds: readonly string[];    // sorted, non-deleted
-}
-
-/** The structured intent a plan was built from, so it can be re-planned without parsing `label`. */
+/** The structured intent a plan was built from, so it can be re-planned. */
 export type PlanRequest =
   | { kind: 'apply'; ids: readonly TransactionId[]; spelling: string }
   | { kind: 'remove'; ids: readonly TransactionId[]; identity: TagIdentity }
-  | { kind: 'rename'; from: TagIdentity; toSpelling: string }   // yields a rename, merge or respell plan
+  | { kind: 'rename'; from: TagIdentity; toSpelling: string }   // yields a rename or merge plan
   | { kind: 'delete'; identity: TagIdentity }
-  | { kind: 'respell'; identity: TagIdentity; keepSpelling: string }
-  | { kind: 'tidy'; identity: TagIdentity }
-  | { kind: 'undo'; entry: HistoryEntry };
+  | { kind: 'undo'; source: UndoSlot };
 
 export type Exclusion =
   | { reason: 'alreadyTagged'; transactionId: TransactionId }
   | { reason: 'splitOnly'; transactionId: TransactionId; splitOccurrences: number }
   | { reason: 'overLength'; transactionId: TransactionId; wouldBe: number }
+  | { reason: 'changedSince'; transactionId: TransactionId }   // undo: memo no longer equals confirmedAfter
   | { reason: 'noChange'; transactionId: TransactionId };
 
 export interface OperationPlan {
   readonly kind: OperationKind;
-  readonly request: PlanRequest;                // what the user asked for; the input to replan
-  readonly label: string;                       // display only, e.g. "Rename #HomeRepair → #Home-Repair"
+  readonly request: PlanRequest;
+  readonly label: string;                    // display only, e.g. "Rename #HomeRepair → #Home-Repair"
   readonly changes: readonly PlannedChange[];
   readonly exclusions: readonly Exclusion[];
-  readonly activeAccountId: AccountId;          // the Active Account when planned; scope for outsideActiveAccountCount
-  readonly outsideActiveAccountCount: number;
   readonly unreachableSplitOccurrences: number;
-  readonly remainsInVocabularyAfter: boolean;   // old spelling/identity survives in splits
-  readonly undoOf?: OperationId;
+  readonly remainsInVocabularyAfter: boolean; // old identity survives in splits
 }
 
+/** Requires a valid spelling from validateTagText; throws on invalid input. */
 export function planApply(state: DomainState, ids: readonly TransactionId[], spelling: string): OperationPlan;
 export function planRemove(state: DomainState, ids: readonly TransactionId[], identity: TagIdentity): OperationPlan;
-export function planRename(state: DomainState, from: TagIdentity, toSpelling: string): OperationPlan; // kind 'merge' when a distinct target identity exists; delegates to planRespell when the identities are equal
+/** Kind 'merge' when a distinct target identity exists. Requires a valid spelling; throws on invalid input. */
+export function planRename(state: DomainState, from: TagIdentity, toSpelling: string): OperationPlan;
 export function planDelete(state: DomainState, identity: TagIdentity): OperationPlan;
-export function planRespell(state: DomainState, identity: TagIdentity, keepSpelling: string): OperationPlan;
-export function planTidy(state: DomainState, identity: TagIdentity): OperationPlan;
-export function planUndo(state: DomainState, entry: HistoryEntry): OperationPlan & { readonly knownConflicts: number };
-/** Dispatches a request to the matching plan* function. */
+export function planUndo(state: DomainState, source: UndoSlot): OperationPlan;
 export function replan(state: DomainState, request: PlanRequest): OperationPlan;
-export function planDiffers(a: OperationPlan, b: OperationPlan): boolean;
-/** Transactions a fresh replan would change that the confirmed plan does not contain (Req 16.5). */
-export function remainingWork(confirmed: OperationPlan, state: DomainState): readonly TransactionId[];
-export function recheck(change: PlannedChange, plan: OperationPlan, current: Transaction | undefined, state: DomainState): 'ok' | 'memoChanged' | 'eligibilityChanged' | 'gone';
+export function planDiffers(a: OperationPlan, b: OperationPlan): boolean; // kind, change IDs, befores, afters, exclusions
+export function recheck(change: PlannedChange, request: PlanRequest, current: Transaction | undefined, state: DomainState):
+  'ok' | 'gone' | 'memoChanged' | 'replanDiffers';
 ```
 
 - **Apply** excludes transactions that already carry the identity in any memo (Req 12.3).
-- **Remove, rename, merge, delete, respell and tidy** reach only `parentMembers`. Split-only members are listed as exclusions, and surviving split occurrences are counted (Req 9.3–9.5, 13.1, 13.8).
+- **Remove, rename, merge and delete** reach only `parentMembers`. Split-only members are listed as exclusions, and surviving split occurrences are counted (Req 9.3–9.5, 13.1, 13.8).
 - **Over-length results** are excluded and never truncated (Req 12.7).
-- **Re-planning**: every plan carries its `PlanRequest`. The store keeps the open preview's plan, and after a merged refresh it calls `replan(state, plan.request)` and compares the result with `planDiffers` (Req 4.6). During an operation, `remainingWork` replans the confirmed request against the latest state. The IDs of changes not in the confirmed scope, for example an exclusion that has since become eligible, are the remaining work. They are never written (Req 16.4–16.5). Undo has no remaining work.
-- **`recheck`** returns `memoChanged` when the current memo differs from `before`. It returns `gone` for a deleted transaction. It returns `eligibilityChanged` when the recomputed `after` would differ, or when a fingerprint field **relevant to the plan** differs (Req 17.1–17.3). Unrelated changes never block the write (Req 17.4):
-  - The account is relevant to every kind only as **scope**: whether the transaction is inside `plan.activeAccountId`. Moving a transaction across that boundary changes the preview's outside-account count, or takes a Register selection out of the account it was chosen in, so it is a conflict. Moving it between two other accounts changes neither, so it is ignored.
-  - `amount` is relevant only to a change whose `changesMembership` is true, because only then does the write move the amount into or out of a Tag Total. It is set per change when planning, by comparing the membership computed from `before` with the one computed from `after`, each together with the transaction's split memos. So a remove or delete whose identity survives in a split, a merge onto a transaction already in the target whose source survives in a split, a respell and a tidy all ignore an amount-only edit. A rename onto a new identity does not: the transaction leaves the source's Tag Total and enters the target's, so `changesMembership` is true and the amount is checked. `planUndo` computes it the same way for each restoring change.
-  - `splitTokens` and `subtransactionIds` are compared only for the tokens whose identity the plan touches (the source and, for rename or merge, the target). Those tokens decide `alreadyTagged` and `splitOnly` exclusions, unreachable split counts and spelling counts. This includes a same-identity respelling or marker change in a split memo. A split being added or removed counts only when it adds or removes such a token.
+- **Validation in the domain**: `planApply` and `planRename` call `validateTagText` themselves and throw on invalid text. The UI shows the reason inline before it ever calls them (Req 12.11, 13.9). `replan` therefore can never produce a plan for invalid text.
+- **Undo** builds a change restoring `before` for each slot entry whose current memo equals `confirmedAfter`. Every other entry becomes a `changedSince` exclusion (Req 19.2–19.3).
+- **`recheck`** compares the re-read transaction against the confirmed change (Req 17.1–17.3):
+  - `gone` if it was deleted;
+  - `memoChanged` if its memo ≠ `before`;
+  - `replanDiffers` if planning `request` for this one transaction against the current state gives a different `after`, or excludes it.
+
+  Account moves, amount edits and other field changes do not block a write unless they change the planned `after` (Req 17.4).
 
 ### `src/ynab/client.ts`
 
@@ -544,7 +565,7 @@ export interface YnabClient {
   listPlans(opts?: RequestOptions): Promise<PlanSummary[]>;
   getAccounts(planId: string, q: { lastKnowledge?: number }, opts?: RequestOptions): Promise<Delta<Account>>;
   getCategories(planId: string, q: { lastKnowledge?: number }, opts?: RequestOptions): Promise<Delta<CategoryGroupWithCategories>>;
-  getTransactions(planId: string, q: { sinceDate: IsoDate; untilDate?: IsoDate; lastKnowledge?: number }, opts?: RequestOptions): Promise<Delta<TransactionDetail>>;
+  getTransactions(planId: string, q: { sinceDate: IsoDate; lastKnowledge?: number }, opts?: RequestOptions): Promise<Delta<TransactionDetail>>;
   patchTransactions(planId: string, items: readonly { id: string; memo: string | null; approved: boolean }[], opts?: RequestOptions): Promise<SaveTransactionsResponse>;
   dispose(): void; // aborts in-flight requests, drops the token
 }
@@ -555,7 +576,8 @@ export function createYnabClient(pat: string, opts?: { fetchImpl?: typeof fetch;
 The PAT is captured in a closure and never exposed as a property. Every request:
 
 - asserts `new URL(url).origin === 'https://api.ynab.com'` before attaching `Authorization: Bearer`;
-- is sent with `cache: 'no-store'`, `credentials: 'omit'`, `referrerPolicy: 'no-referrer'`, `mode: 'cors'`, and an `AbortSignal` that combines (`AbortSignal.any`) a 35-second timeout, `dispose`, and the caller's `opts.signal` (Req 1.4, 1.11).
+- is sent with `cache: 'no-store'`, `credentials: 'omit'`, `referrerPolicy: 'no-referrer'` and `mode: 'cors'`;
+- carries an `AbortSignal` that combines a 35-second timeout, `dispose` and the caller's `opts.signal` (Req 1.4, 1.11).
 
 Responses are classified in `src/ynab/errors.ts`:
 
@@ -566,203 +588,195 @@ export type YnabFailure =
   | { kind: 'notFound' }                        // 404
   | { kind: 'rejected'; detail: string }        // 400
   | { kind: 'rateLimited' }                     // 429
-  | { kind: 'server'; status: number }          // 5xx incl. 503 timeout
+  | { kind: 'server'; status: number }          // 5xx
   | { kind: 'network' }                         // fetch threw before a response
   | { kind: 'timeout' }                         // client abort after 35 s
   | { kind: 'cancelled' };                      // aborted by dispose or the session's signal
 ```
 
-For writes, `server`, `network` and `timeout` mean the request **may have been sent**, and they map to Unknown Outcome. For reads they map to refresh failure.
+An abort is classified by its reason. Only the client's private timeout reason becomes `timeout`. Any other abort becomes `cancelled`, and its result is discarded: it raises no `Updates paused`, starts no verification, and is never retried (Req 2.6–2.7, 18.9).
 
-An abort is classified by its reason, not by the error it throws. The client aborts its timeout with a private `TimeoutReason` sentinel, and only that reason becomes `timeout`. Any other abort, from `dispose` or from the session's signal on `switchBudget`, `disconnect` or `lock`, becomes `cancelled`, whether it happens before `fetch` starts, while it is waiting for headers or while it is reading the body. A `cancelled` result is discarded: it never pauses refresh, never creates an Unknown Outcome, and is never retried or verified. Its session is already gone (Req 2.6–2.7, 18.9).
-
-### `src/ynab/delta.ts`
+### `src/ynab/map.ts` and `src/ynab/delta.ts`
 
 ```typescript
+export function mapTransaction(t: TransactionDetail): Transaction; // '' memo → null, drops deleted subtransactions
 export function mergeTransactions(current: ReadonlyMap<TransactionId, Transaction>, delta: readonly TransactionDetail[]): Map<TransactionId, Transaction>;
 ```
 
-The merge upserts by ID, removes transactions marked `deleted`, and stores each parent's subtransactions without the deleted ones. It returns a new map, so React snapshots stay immutable.
+- **Merge:** upserts by ID and removes transactions marked `deleted`. It returns a new map, so React snapshots stay immutable.
+- **Memo mapping:** a `""` memo maps to `null`, so every memo comparison is exact (`===`). This depends on contract check 5.
+
+### `src/session/patStorage.ts`
+
+```typescript
+export function readRememberedPat(): string | null;
+export function rememberPat(pat: string): void;
+export function forgetPat(): void;
+```
+
+This is the only module allowed to touch `localStorage`, and it uses the single key `ynot.pat`. Every call is wrapped in `try`/`catch`. If storage is unavailable, remembering silently does nothing, and the connect screen says the token could not be remembered (Req 2.9).
 
 ### `src/session/store.ts`
 
 ```typescript
 export type AppPhase =
-  | { phase: 'disconnected'; notice?: 'locked' | 'disconnected' | 'unauthorized' }
+  | { phase: 'disconnected'; notice?: 'disconnected' | 'unauthorized' | 'rememberFailed' }
   | { phase: 'connecting' }
   | { phase: 'choosingBudget'; plans: PlanSummary[] }
-  | { phase: 'loadingBudget'; planId: string; progress: LoadProgress }
+  | { phase: 'loadingBudget'; planId: string }
   | { phase: 'loadFailed'; planId: string; failure: YnabFailure }
   | { phase: 'ready'; budget: BudgetSessionSnapshot };
 
 export interface SessionStore {
   getSnapshot(): AppPhase;
   subscribe(listener: () => void): () => void;
-  connect(pat: string): Promise<void>;
+  start(): Promise<void>;                          // connects with a Remembered PAT if one exists
+  connect(pat: string, remember: boolean): Promise<void>;
   chooseBudget(planId: string): Promise<void>;
-  switchBudget(planId: string): Promise<void>; // rejects with 'writeUnresolved' (Req 3.10)
+  switchBudget(): Promise<void>;                   // rejects with 'writeUnresolved' (Req 3.10)
   disconnect(): void;
-  lock(): void;
-  refreshNow(): Promise<void>;
+  refreshNow(opts?: { includeAccounts: boolean }): Promise<void>;
   // browsing
-  setActiveAccount(id: AccountId): void;
+  setScope(scope: RegisterScope): void;
   setFilters(f: RegisterFilters): void;
   setSelection(ids: ReadonlySet<TransactionId>): void;
   openTag(identity: TagIdentity | null): void;
-  dismissPair(key: PairKey): void;
-  // writes (delegated to WriteEngine)
-  preview(plan: OperationPlan): void;
-  confirm(): void;
+  // writes
+  preview(request: PlanRequest): void;
+  confirm(): Promise<void>;                        // confirm-time refresh and replan, then start the engine
   cancelOperation(): void;
-  resumeOperation(): void;
   verifyAgain(): void;
-  undoLatest(): void;
+  selectForReview(statuses: ReadonlySet<'unchanged' | 'conflict'>): void;
+  previewUndo(): void;
 }
 ```
 
-React reads the store through `useSyncExternalStore`. `BudgetSessionSnapshot` holds the transactions, accounts, categories, `serverKnowledge`, derived `TagIndex` and warnings, register view state, selection, dismissals, `refreshHealth: 'ok' | { paused: YnabFailure }`, the current preview, operation state and undo history. `disconnect` and `lock` replace the snapshot and call `client.dispose()`, which aborts in-flight requests and drops the PAT (Req 2.2–2.3). `switchBudget` replaces only the `BudgetSession`. It keeps the connected `YnabClient`, because the PAT exists only in that client's closure, and aborts the old session's in-flight reads through a per-`BudgetSession` `AbortController` (Req 3.9).
-
-- **Stale-result guard**: every request made for a Budget Session, including the loader's, the Refresh Scheduler's and the write engine's, passes that session's `signal` to the client. Aborting alone is not enough, because a response can already be resolving when the switch happens. So each `BudgetSession` also carries a `generation` number. The store keeps a private counter that only ever increases and is never reset or reused within the store's lifetime. `chooseBudget` and `switchBudget` take the next value for the new session, and `disconnect` and `lock` advance the counter too, so a result from before a disconnect cannot land in a later connection. A request captures the generation when it starts, and the store applies its result (`mergeTransactions`, accounts, categories, load completion, write outcomes) only if the captured value equals the current one. Any other result is discarded.
-- **Scheduler ownership**: the Refresh Scheduler is started for one `BudgetSession`. `switchBudget`, `disconnect` and `lock` call its disposer before the session is replaced, and `switchBudget` starts a new scheduler once the new budget is ready.
+React reads the store through `useSyncExternalStore`. `BudgetSessionSnapshot` holds:
+- data: transactions, accounts, categories, `serverKnowledge`, and the derived `TagIndex` and markers
+- view state: scope, filters, selection and open tag
+- `refreshHealth: 'ok' | { paused: YnabFailure }` and `lastUpdatedAt`
+- operations: the current preview, the operation, the last results and the undo slot
 
 - **Selection rules**:
-  - `setFilters` and `setActiveAccount` clear the selection when it is nonempty and raise a `selectionCleared` toast event (Req 6.4–6.5).
-  - A year jump is not a filter change.
-  - On a delta merge, the selection keeps IDs that still exist in the Active Account and drops the rest (Req 4.5).
-- **Write gate**: `canWrite` is `ready && refreshHealth === 'ok' && operation === null`. Here `operation` means the unfinished operation, including one that is paused or has unresolved Unknown Outcomes. When writes are blocked, the UI shows the reason (Req 4.8, 18.3, 18.8).
+  - `setFilters` and `setScope` clear a nonempty selection and raise one `selectionCleared` toast event (Req 6.4–6.5).
+  - On a delta merge, the selection keeps the IDs that still exist in the scope and drops the rest (Req 4.5).
+  - When a Write Operation finishes, the selection is cleared (Req 6.6).
+- **Write gate**: `canWrite` is `ready && refreshHealth === 'ok' && (operation === null || operation.state === 'finished')`. When writes are blocked, the UI shows the reason (Req 4.8, 18.3, 18.8).
+- **401 anywhere**:
+  - it deletes any Remembered PAT (Req 2.10);
+  - mid-session, it pauses updates with a message that the token may have been revoked;
+  - on connect, it returns to `disconnected` with `unauthorized`.
 
-### `src/session/refreshScheduler.ts`
-
-```typescript
-export interface RefreshSchedulerDeps {
-  readonly store: SessionStore;
-  readonly client: YnabClient;
-  readonly signal: AbortSignal;                  // the Budget Session's signal
-  readonly now: () => number;
-  /** Schedules `fn` after `ms`; returns a function that cancels it. */
-  readonly setTimer: (fn: () => void, ms: number) => () => void;
-  readonly document: Pick<Document, 'visibilityState' | 'addEventListener' | 'removeEventListener'>;
-}
-
-/** Returns a disposer. It is idempotent. */
-export function startRefreshScheduler(deps: RefreshSchedulerDeps): () => void;
-```
-
-- **Disposal**: the disposer removes the `visibilitychange` listener, cancels the pending timer, and marks the scheduler disposed. A disposed scheduler schedules no further checks, and it ignores the result of a check that was already in flight. It also clears its references to `store` and `client`, so an old session's scheduler cannot keep them alive.
-
-- **Cadence**: a check runs every 60 seconds while `visibilityState === 'visible'`, and immediately on `visibilitychange` to visible (Req 4.2–4.3).
-- **During writes**: checks are skipped while an operation is running, and the write engine does its own reads (Req 4.4).
-- **Accounts and categories** refresh every tenth check, on a manual Refresh, or when a delta references an unknown ID (Decision 7).
-- **On failure**, `refreshHealth` becomes `paused` and the UI shows `Updates paused` with Retry. Retry calls `refreshNow`, and success restores `ok` (Req 4.7–4.8).
-- **Open previews**: after a successful merge, an open preview is re-planned from its `request` with `replan`. If `planDiffers` is true, the preview is marked stale and confirmation is disabled until the user regenerates it (Req 4.6).
-- **Paused operations**: a paused operation is never restarted (Req 4.9).
-
-### `src/session/idleLock.ts`
+### `src/session/refreshOnReturn.ts`
 
 ```typescript
-export const IDLE_WARNING_MS = 14 * 60_000;
-export const IDLE_LOCK_MS = 15 * 60_000;
-export function startIdleLock(deps: { onWarn(); onLock(); now: () => number; target: EventTarget; document }): { dispose(): void };
+export function startRefreshOnReturn(deps: {
+  store: SessionStore;
+  document: Pick<Document, 'visibilityState' | 'addEventListener' | 'removeEventListener'>;
+}): () => void;
 ```
 
-- **Interaction** means `pointerdown`, `keydown`, `wheel` and `touchstart`. Refresh activity never counts (Req 2.4).
-- **Warning**: at 14 minutes an `alertdialog` counts down to the lock, with a "Stay connected" button. If a write has requests already sent, the dialog adds Req 2.6's warning that they may still land.
-- **Lock**: at 15 minutes the session clears. Elapsed time is measured with `now()`, not by trusting throttled timers. If a hidden tab returns after 15 minutes, it locks immediately, and the locked screen says it locked for inactivity (Req 2.3).
+On `visibilitychange` to `visible`, it calls `store.refreshNow()` if the phase is `ready`, no Write Operation is running, and no refresh is in flight (Req 4.3–4.4). The returned disposer removes the listener.
 
 ### `src/writes/writeEngine.ts`
 
+The engine is a pure transition function, `step(state, event) → { state, effects }`, driven by a thin runner that performs the effects (requests) and feeds their results back as events. XState is not used.
+
 ```typescript
-export type TxOutcome =
-  | { status: 'pending' }
-  | { status: 'completed'; confirmedMemo: string | null }
-  | { status: 'skipped'; reason: 'conflictMemo' | 'conflictEligibility' | 'gone' | 'rejected' }
-  | { status: 'failed'; failure: YnabFailure }
-  | { status: 'unattempted' }
-  | { status: 'unknown' };
+export type ItemStatus = 'pending' | 'sent' | 'done' | 'unchanged' | 'conflict';
+
+export type ConflictReason = 'memoChanged' | 'gone' | 'replanDiffers' | 'externalEdit';
+export type UnchangedReason = 'notSent' | 'rejected' | 'cancelled' | 'stoppedAfterFailure';
+
+export interface ItemResult {
+  readonly change: PlannedChange;
+  readonly status: ItemStatus;
+  readonly reason?: ConflictReason | UnchangedReason;
+  readonly detail?: string;            // e.g. YNAB's 400 message
+}
 
 export type OperationState =
   | { state: 'running'; batchIndex: number; cancelRequested: boolean }
-  | { state: 'paused'; reason: 'rateLimited' | 'connection' | 'unknownOutcome'; cancelRequested: boolean }
-  | { state: 'verifying'; cancelRequested: boolean }
-  | { state: 'finished'; cancelled: boolean };
+  | { state: 'verifying'; stoppedBy: YnabFailure | 'cancel' | null }
+  | { state: 'unverified'; stoppedBy: YnabFailure | 'cancel' | null }  // Unknown Outcome
+  | { state: 'finished'; stoppedBy: YnabFailure | 'cancel' | null };
 
 export interface Operation {
-  readonly id: OperationId;
-  readonly plan: OperationPlan;                 // fixed scope (Req 16.4)
-  readonly outcomes: ReadonlyMap<TransactionId, TxOutcome>;
+  readonly plan: OperationPlan;        // fixed scope (Req 16.4)
+  readonly items: ReadonlyMap<TransactionId, ItemResult>;
   readonly state: OperationState;
-  readonly remainingWork: readonly TransactionId[]; // from remainingWork(plan, state) after each read (Req 16.5)
-}
-
-export interface WriteEngine {
-  start(plan: OperationPlan): void;             // only when canWrite
-  cancel(): void;                               // Req 18.4
-  resume(): void;                               // Req 18.6–18.7
-  verifyAgain(): void;                          // Req 18.3
 }
 ```
 
-- **Classification check**: after each pre-read merges, the engine replans the confirmed request and compares the plan **kind**. A rename confirmed onto a new identity becomes a merge if an external edit meanwhile added the target identity to any transaction in the budget. When the kind changes, the engine sends nothing further. Every item still `pending` or `unattempted` becomes `skipped: conflictEligibility`, while outcomes already recorded (`completed`, `skipped`, `failed`) are kept as they are, and the operation finishes with a notice that it would now be a merge and needs a fresh preview (Req 13.2, 17.3). Per-item `recheck` cannot catch this, because transactions without the target keep the same `after` and fingerprint.
-- **Batch loop**: the engine follows the write flow above. The payload for each item is `{ id, memo: after, approved: current.approved }`, where `current` is the pre-read snapshot. No `subtransactions` field is ever sent (Req 17.4–17.5).
-- **Verification**: a transaction is `completed` only when a response or delta shows its memo equal to `after`.
-- **Unknown outcomes**: they trigger an automatic delta verify. A memo equal to `after` becomes `completed`, one equal to `before` becomes `unattempted` and is included on Resume, and anything else becomes `skipped: conflictMemo` (Req 18.1–18.2). If the verify read fails, the items stay `unknown`, and the engine stays paused with Verify again available (Req 18.3).
-- **Pauses**: a 429 pauses the engine with reason `rateLimited`. A network loss on a `PATCH` means the write may have committed, so it pauses as `unknownOutcome` and verifies immediately. A failed pre-read pauses as `connection`, because nothing in that batch has been sent. A failed verify read that follows a sent `PATCH` (after a 200 with a missing or different memo, a 400, or an uncertain failure) pauses as `unknownOutcome`, with every item it has not confirmed still `unknown`, because those writes may have committed. The reason depends on whether any sent item is unconfirmed, not on which request failed. So Cancel while paused finishes at once only when nothing is `unknown`; otherwise it waits for Verify again (Req 18.3–18.4). Progress is kept in every case, and Resume runs the verify step first, then rechecks the remaining items (Req 18.1, 18.5–18.7).
-- **Cancel** sets `cancelRequested`, which is carried through `running`, `verifying` and `paused` and is never cleared. The engine checks it before each pre-read and again immediately before each `PATCH`, so a cancel that arrives during a pre-read sends nothing for that batch, and its items stay `unattempted`. A `PATCH` already sent is awaited and verified, and no further batches are sent (Req 18.4).
-  - **Cancel with a request in doubt**: when a sent `PATCH` ends in an Unknown Outcome after, or together with, a cancel, the engine still verifies it. Items at `after` become `completed` and items at `before` become `unattempted`. The operation then finishes with `cancelled: true` instead of offering Resume. If verification fails, it stays paused with Verify again only, and finishes cancelled once verification succeeds.
-  - **Cancel while paused** with no item `unknown` (`rateLimited`, or `connection` from a failed pre-read) finishes the operation cancelled at once.
-  - **Resume** is offered only when `cancelRequested` is false. Unattempted items of a cancelled operation can be written only through Select for review and a fresh preview (Req 17.8).
-- **No `pending` item survives a pause or a finish**: whenever the operation enters `paused` (any reason) or `finished` (completing, cancelling, or stopping on a kind change), every item still `pending` becomes `unattempted` first. Items in doubt are already `unknown` and stay so. Recorded outcomes are never overwritten. Resume processes `unattempted` items through the usual recheck, as it already does for unknown outcomes verified back to `before`. A finished operation's unattempted items reach Select for review (Property 17).
-- **Finish**: partial success is kept with no rollback (Req 17.7). The engine appends a history entry holding the completed changes, clears the selection, and keeps the results (Req 6.6, 16.6, 17.9).
-- **Retry of failed items**: failed items can be retried only through Select for review, which builds a new plan (Req 6.7, 17.8).
+- **Batch loop**: follows the write flow above. The payload for each item is `{ id, memo: after, approved: current.approved }`, where `current` is the pre-read snapshot. No `subtransactions` field is ever sent (Req 17.4–17.5).
+- **Recheck results** become `conflict` with the matching reason, and the rest of the batch is still written (Req 17.2–17.3).
+- **Stop**: any failure moves to `verifying` (Req 18.1). Items not yet sent become `unchanged` with reason `stoppedAfterFailure`. A cancel does the same with reason `cancelled`, once the in-flight `PATCH`, if any, settles (Req 18.4).
+- **Verify**: one delta read classifies every `sent` item (Req 17.6, 18.2):
+  - memo = `after` → `done`
+  - memo = `before` → `unchanged`, with reason `rejected` and YNAB's message when the batch returned 400
+  - deleted, or any other memo → `conflict` with reason `externalEdit`
 
-### `src/writes/undoHistory.ts`
+  The final verify runs on every operation, not only after a failure.
+- **Verification failure**: the operation becomes `unverified`, its `sent` items stay `sent`, Verify again repeats the delta read, and writes stay blocked (Req 18.3).
+- **Finish**: there is no rollback (Req 17.7). The undo slot becomes this operation's `done` changes (label, and `{ transactionId, before, confirmedAfter }` for each), the selection clears, and the results stay until the next confirm (Req 6.6, 17.12, 19.1).
+- **Continuing**: `selectForReview` puts the chosen items' transaction IDs into the Register selection and builds a fresh preview of the same request kind. Items already `done` are excluded by planning (Req 6.7, 18.7).
+
+### The undo slot
+
+The type lives in `src/domain/operations/plan.ts`, so the domain imports nothing from `src/writes/`. The write engine fills the slot.
 
 ```typescript
-export interface HistoryEntry {
-  readonly operationId: OperationId;
+export interface UndoSlot {
   readonly label: string;
-  readonly changes: readonly { transactionId: TransactionId; before: string | null; confirmedAfter: string | null; fingerprint: EligibilityFingerprint }[];
+  readonly changes: readonly { transactionId: TransactionId; before: string | null; confirmedAfter: string | null }[];
 }
-export interface UndoHistory { readonly entries: readonly HistoryEntry[]; } // newest last
 ```
 
-- **Scope**: undo always targets the newest entry (Req 19.1).
-- **Planning**: `planUndo` includes only changes whose current memo equals `confirmedAfter`. Every other change is counted in `knownConflicts` (Req 19.2–19.3).
-- **Confirmation** is a dialog summarising the label, the number of transactions to restore and the known conflicts, with no before/after listing (Req 19.4). The undo then runs through the same engine (Req 19.5).
-- **After an undo finishes**, including partially, its entry is removed. Undo operations are not added to history, so there is no redo.
-- **Clearing**: history lives in `BudgetSession` and dies with it (Req 19.6).
+- **Scope**: there is one slot, holding the most recent operation with `done` changes. An undo replaces it when it finishes, so undoing an undo re-applies the original (Req 19.1, 19.5).
+- **Preview**: `previewUndo` opens an ordinary Impact Preview from `planUndo` (Req 19.4).
+- **Lifetime**: the slot lives in `BudgetSession` and ends with it (Req 19.6).
 
 ### UI components (`src/ui/`)
 
-| Component | Responsibility | Requirements |
-|---|---|---|
-| `ConnectScreen` | PAT entry, privacy explanation (`PrivacyPanel`), connection errors | 1.10, 2.5, 3.7 |
-| `BudgetPicker` | Plan list, empty state, load progress and failure with Retry/Disconnect | 3.1, 3.6–3.8 |
-| `AppShell` | Header with budget switcher, Refresh, `Updates paused` indicator, Disconnect confirmation (with in-flight warning) and the Register/Tags tabs; hosts the toast region and idle dialog | 2.5–2.6, 3.9–3.10, 4.1, 4.7 |
-| `AccountRail` | Exclusive account navigation with `matching of total` counts, including closed accounts | 5.1, 5.9 |
-| `RegisterToolbar` | Search, category/group/status facets, tag chips with Match all/any, year jump | 5.3–5.5 |
-| `RegisterGrid` | Virtualised React Aria GridList with `aria-rowcount`; checkbox selection; `Select all N matching transactions`; rows show account, category context (split child groups), prose memo, tag chips (clickable filters; a chip for a split-only membership shows a read-only icon and its accessible name ends "read-only, in a split"), signed amount, status marker with label | 5.2, 5.6–5.8, 5.10, 6.1–6.3, 9.3 |
-| `TransactionInspector` | Status label, raw memo, read-only split lines with amounts and memos, tag list with read-only markers | 5.6–5.7, 9.3 |
-| `SelectionBar` | Apply/remove actions for the selection, or the write-blocked reason | 6.2, 12.1 |
-| `TagRail` | Exclusive tag list; pinned collapsible `needs attention` group; single-use section; per-entry warning markers | 11.1, 14.2–14.3 |
-| `TagReader` | `all accounts · all time` label, outside-account count, total composition (net, outflow, inflow, count, transfer pairs), member list with split context and read-only markers, header strip: rename, merge, delete, make consistent, tidy | 10.2, 10.5–10.7, 11.2–11.5, 13.1–13.6 |
-| `WarningDetail` | Pair view with both spellings, counts and limitations, direction choice, `Dismiss for this session`; spelling-variant chooser with canonical marked but not preselected | 15.5–15.11, 13.4 |
-| `ImpactPreview` | Dialog: label, counts, outside-account count, exclusions (already tagged, split-only, over length), unreachable split occurrences, remaining-in-vocabulary notice, per-transaction raw before/after diff list (virtualised), stale banner, Confirm | 9.5, 12.9, 13.2, 16.1–16.3, 4.6 |
-| `OperationPanel` | Progress, Cancel, paused reason with Resume / Verify again, results grouped by outcome, `Select for review`, remaining-work notice | 6.7–6.8, 16.5–16.6, 17.9–17.10, 18.* |
-| `UndoConfirm` | Summary confirmation for undo | 19.4 |
-| `IdleDialog` | Countdown alertdialog with the in-flight warning | 2.3, 2.6 |
-| `Toasts` | React Aria toast region; `selectionCleared` for 5 s, `aria-live="polite"`, never steals focus | 6.5, 20.4 |
+| Component | Responsibility | Requirements | Slice |
+|---|---|---|---|
+| `ConnectScreen` | PAT entry, `Remember on this device` checkbox (off by default), privacy explanation, connection errors | 1.10, 2.5, 2.9–2.10, 3.7 | 1 |
+| `BudgetPicker` | Plan list, empty state, load progress and failure with Retry/Disconnect | 3.1, 3.6–3.8 | 1 |
+| `AppShell` | Header with Switch budget, Refresh, `Last updated`, `Updates paused` with Retry, Disconnect confirmation (with in-flight warning); Tags and Register tabs; toast region | 2.5–2.6, 3.9–3.10, 4.1, 4.7, 4.10 | 1 (Register tab in 2) |
+| `TagOverview` | Sortable React Aria Table of every tag: net, outflow, inflow, count, markers; `all accounts · all time`; row opens the reader | 11.5–11.7, 14.2–14.3 | 1 |
+| `TagRail` | Exclusive tag list with marker icons | 11.1, 14.2 | 1 |
+| `TagReader` | Scope label, outside-account count, total composition (net, outflow, inflow, count, transfer pairs), member list showing contributing split lines and read-only markers; header actions rename, delete (slice 3) | 10.2, 10.5–10.7, 11.2–11.4, 13.1 | 1 (actions in 3) |
+| `AccountRail` | All accounts plus each account, with `matching of total` counts, including closed accounts | 5.1, 5.9 | 2 |
+| `RegisterToolbar` | Search; category, group, status and single-tag facets | 5.4–5.5 | 2 |
+| `RegisterGrid` | Virtualised GridList with `aria-rowcount`; checkbox selection; `Select all N matching transactions`; rows show account (always in All accounts), category context, prose memo, tag chips (split-only chips read "read-only, in a split"), signed amount, status label | 5.2, 5.6–5.8, 5.10, 5.12, 6.1–6.3, 9.3 | 2 |
+| `TransactionInspector` | Status label, raw memo, read-only split lines with amounts and memos, tag list with read-only markers | 5.6–5.7, 9.3 | 2 |
+| `SelectionBar` | Apply and remove for the selection, or the write-blocked reason | 6.2, 12.1 | 2 |
+| `TagPicker` | ComboBox suggesting existing tags by identity and near-duplicate key, a "new tag" marker, inline validation reason | 12.10–12.11 | 2 |
+| `ImpactPreview` | Label, counts, outside-account count, exclusions, unreachable split occurrences, remaining-in-vocabulary notice, per-transaction raw before/after list (virtualised), "changed since you reviewed it" banner, Confirm | 4.6, 9.5, 12.9, 13.2, 16.1–16.3, 19.4 | 2 |
+| `OperationResults` | Progress and Cancel; Verify again when unverified; table of transactions with date, payee, account, amount, before → after, status and reason; status filter; Select unchanged/conflicts → review; Undo | 6.7, 16.6, 17.9–17.12, 18.*, 19.1 | 2 |
+| `RenameDialog` | Rename text with inline validation, merge notice when the target exists, prefilled from a near-duplicate marker | 13.1–13.3, 13.9, 14.6 | 3 |
+| `Toasts` | `selectionCleared` for 5 s, polite live region, never steals focus | 6.5, 20.4 | 2 |
 
-**Responsive layout.** At ≥ 1024px the layout is three columns: rail, register or reader, inspector. Below 1024px the rails become a drawer opened from the header, and the inspector and previews become full-height sheets. `SelectionBar` and `OperationPanel` dock to the bottom. Counts, scope labels, read-only markers and recovery actions have no phone-only omissions (Req 20.1, 20.3). Status, warnings and outcomes always carry text or an icon with an accessible name, never colour alone (Req 20.5).
+**Responsive layout.** At ≥ 1024px the layout has three columns: rail, main view, and inspector. Below 1024px:
+- the rails become a drawer opened from the header;
+- the inspector, previews and results become full-height sheets;
+- `SelectionBar` docks to the bottom.
 
-**Copy.** Conflict protection is described as best effort (Req 17.10). Disconnect states that the PAT is not revoked and links to YNAB Developer Settings (Req 2.5).
+Connection, the overview, the reader, browsing, and apply/remove are designed for phone width. Rename and delete remain reachable (Req 20.1, 20.3).
+
+**Roles and names.** Every interactive control and status message has a semantic role and an accessible name (Req 20.2, 20.5). React Aria supplies most of these; icons that convey status carry `aria-label`.
+
+**Copy.**
+- Conflict protection is described as best effort (Req 17.10).
+- Disconnect says the PAT is not revoked, that a remembered token is forgotten, and links to YNAB Developer Settings (Req 2.5).
+- The privacy explanation says a Remembered PAT grants full account access until revoked (Req 1.10).
 
 ### Deployment: `vercel.json`
 
 ```json
 {
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm exec vp build && node scripts/check-build-csp.ts",
+  "buildCommand": "pnpm exec vp build",
   "outputDirectory": "dist",
   "framework": null,
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
@@ -770,7 +784,7 @@ export interface UndoHistory { readonly entries: readonly HistoryEntry[]; } // n
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "Content-Security-Policy", "value": "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; connect-src https://api.ynab.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'" },
+        { "key": "Content-Security-Policy", "value": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.ynab.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'" },
         { "key": "Referrer-Policy", "value": "no-referrer" },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "X-Frame-Options", "value": "DENY" },
@@ -785,10 +799,10 @@ export interface UndoHistory { readonly entries: readonly HistoryEntry[]; } // n
 }
 ```
 
-- **Vercel project settings**: Web Analytics, Speed Insights and the Vercel Toolbar stay off. The production domain is a dedicated subdomain set in the Vercel project, and Deployment Protection covers all preview URLs (Decision 2, Req 1.5–1.6).
-- **Build settings** (in `vite.config.ts`, via `defineConfig` from `vite-plus`): `build.modulePreload.polyfill = false`, `build.assetsInlineLimit = 0` (so no `data:` URIs), and self-hosted Geist fonts under `public/fonts/`.
-- **Preview server**: `vite.config.ts` reads the same headers from `vercel.json` into `preview.headers` for `vp preview`, so end-to-end tests run under the production CSP.
-- **Build guard**: `scripts/check-build-csp.ts` runs after `vp build`, both locally and in the Vercel build command, and fails if `dist/index.html` contains inline `<script>` or `<style>`, `on*=` attributes, `style=` attributes, or any absolute URL. It also fails if the JS bundles contain `eval(` or `new Function(`, or if the `vercel.json` CSP differs from the expected constant (Req 1.7–1.8).
+- **Vercel project settings**: Web Analytics, Speed Insights and the Vercel Toolbar stay off. The production domain is a dedicated subdomain, and Deployment Protection covers preview URLs (Decision 2, Req 1.5–1.6).
+- **Build settings** (in `vite.config.ts`): `build.modulePreload.polyfill = false` and `build.assetsInlineLimit = 0`, so the build emits no `data:` URIs. Fonts are system fonts, so none are loaded.
+- **Preview server**: `vite.config.ts` reads the headers from `vercel.json` into `preview.headers`, so end-to-end tests run under the production CSP.
+- **CSP policy**: the policy is never weakened to make a build work (Req 1.8). The boundary end-to-end spec fails on any `securitypolicyviolation`, and at release `curl -I` against production confirms the deployed headers (Req 21.6).
 
 ## Data Models
 
@@ -805,7 +819,7 @@ export interface Transaction {
   readonly id: TransactionId;
   readonly date: IsoDate;
   readonly amount: number;               // milliunits, signed
-  readonly memo: string | null;          // raw
+  readonly memo: string | null;          // raw, never ''
   readonly cleared: 'uncleared' | 'cleared' | 'reconciled';
   readonly approved: boolean;
   readonly accountId: AccountId;
@@ -817,8 +831,8 @@ export interface Transaction {
 
 export interface SubTransaction {
   readonly id: string;
-  readonly amount: number;
-  readonly memo: string | null;
+  readonly amount: number;               // milliunits, signed
+  readonly memo: string | null;          // raw, never ''
   readonly categoryId: CategoryId | null;
   readonly payeeName: string | null;
   readonly transferTransactionId: string | null;
@@ -832,35 +846,38 @@ export interface DomainState {
   readonly accounts: ReadonlyMap<AccountId, Account>;
   readonly categories: ReadonlyMap<CategoryId, Category>;
   readonly index: TagIndex;
-  readonly activeAccountId: AccountId;
 }
 ```
 
-The mapping from YNAB's `TransactionDetail` happens in `src/ynab/map.ts`. It maps a `""` memo (parent or split) to `null`, so the domain never holds `""`. Every memo comparison in `recheck`, verification and `planUndo` is then exact (`===`) on the mapped value (Req 17.1–17.2, 19.2–19.3). An empty memo is written as `null`. This depends on contract check 5. If YNAB turns out to treat `null` and `""` as different in any way a user can see, the mapping is revisited through the change protocol before the write engine is built. Scheduled transactions are never requested, and pending ones are never returned (Req 3.3–3.4). Deleted accounts are hidden from the rail, and closed accounts are kept.
+- **Exclusions:** scheduled transactions are never requested, and pending ones are never returned (Req 3.3–3.4).
+- **Accounts:** deleted accounts are hidden, and closed accounts are kept.
 
 ### `BudgetSession` (in-memory only)
 
 ```typescript
 export interface BudgetSession {
-  /** From the store's increasing counter; never reused. Guards against stale results. */
-  readonly generation: number;
-  readonly signal: AbortSignal;
+  readonly controller: AbortController;
   readonly plan: { id: string; name: string; firstMonth: IsoDate; currencyFormat: CurrencyFormat };
   readonly knowledge: { transactions: number; accounts: number; categories: number };
   readonly domain: DomainState;
+  readonly markers: ReadonlyMap<TagIdentity, TagMarkers>;
+  readonly scope: RegisterScope;
   readonly filters: RegisterFilters;
   readonly selection: ReadonlySet<TransactionId>;
   readonly openTag: TagIdentity | null;
-  readonly dismissedPairs: ReadonlySet<PairKey>;
   readonly refreshHealth: 'ok' | { paused: YnabFailure };
-  readonly preview: { plan: OperationPlan; stale: boolean } | null;
-  readonly operation: Operation | null;
-  readonly lastResults: Operation | null;
-  readonly history: UndoHistory;
+  readonly lastUpdatedAt: number | null;
+  readonly preview: { plan: OperationPlan; changedSinceReview: boolean } | null;
+  readonly operation: Operation | null;  // current or last finished
+  readonly undo: UndoSlot | null;
 }
 ```
 
-`PairKey` is `` `${a}\u0000${b}` ``, where `a` and `b` are sorted by code point. There is no serialization of any of these types, and no code path writes them to `localStorage`, `sessionStorage`, IndexedDB, cookies, the Cache API, the URL or the console. Oxlint, configured in `vite.config.ts` and run by `vp check`, enforces `no-console` in `src/` and bans the web-storage globals through `no-restricted-globals` (Req 1.3, 22.3).
+None of these types is serialized. Only `patStorage.ts` writes to browser storage, and it writes only the PAT.
+
+Oxlint (configured in `vite.config.ts` and run by `vp check`) enforces this:
+- `no-console` in `src/`;
+- `no-restricted-globals` for `localStorage`, `sessionStorage`, `indexedDB` and `caches`, with an override for `src/session/patStorage.ts` alone (Req 1.3, 22.3).
 
 ### YNAB write payload
 
@@ -870,7 +887,9 @@ export interface BudgetSession {
 
 ## Correctness Properties
 
-### Property 1: Tokens are never truncated
+Properties marked **(fast-check)** are property-based tests. The others are checked by example tests that name the property (Decision 13 of the problem statement).
+
+### Property 1: Tokens are never truncated (fast-check)
 
 *For any* memo string, every token from `parseMemo` SHALL span from its markers to a whitespace boundary or the memo end, less only trailing `Po`/`Pe`/`Pf` code points. Its text SHALL contain no whitespace, and SHALL be neither empty nor entirely `Nd`.
 
@@ -882,47 +901,52 @@ export interface BudgetSession {
 
 **Validates: Requirements 7.5, 7.6, 7.7, 7.8, 7.9**
 
-### Property 3: Identity is invariant under canonical equivalence and case
+### Property 3: Identity is invariant under canonical equivalence and case (fast-check)
 
-*For any* tag text `t`, `tagIdentity` SHALL return the same identity for `t`, `t.normalize('NFD')`, `t.normalize('NFC')` and any string whose full case folding equals that of `t`. It SHALL differ for two texts whose full case foldings of their NFC forms differ, even when they are `NFKC`-equivalent (for example `ＴＡＸ` and `TAX`, or `m²` and `m2`). `ﬁ` and `fi` SHALL share an identity, because folding maps the ligature.
+*For any* tag text `t`, `tagIdentity` SHALL return the same identity for `t`, `t.normalize('NFD')`, `t.toUpperCase()` (when its NFC lowercase equals `t`'s) and `t.toLowerCase()`. It SHALL differ for NFKC-equivalent but canonically distinct texts such as `ＴＡＸ` and `TAX`. `Straße` and `STRASSE` SHALL differ.
 
 **Validates: Requirements 8.1, 8.2, 8.3**
 
 ### Property 4: Canonical Spelling ignores input order
 
-*For any* transaction set and any permutation of its insertion order, `buildTagIndex` SHALL produce identical Canonical Spellings. The winner SHALL maximise distinct-transaction count, then prefer the earliest date, then the lowest code-point order.
+*For any* transaction set and any permutation of its insertion order, `buildTagIndex` SHALL produce identical Canonical Spellings, chosen by distinct-transaction count, then earliest date, then lowest code-point order.
 
 **Validates: Requirements 8.4, 8.5, 8.6, 8.7**
 
 ### Property 5: Membership is a set
 
-*For any* transaction, duplicating an existing tag occurrence in its parent memo or in any split memo SHALL change neither its membership, nor any Tag Total, nor any member count.
+*For any* transaction, duplicating an existing tag occurrence in its parent memo or in any split memo SHALL change neither its membership nor any Tag Total nor any member count.
 
-**Validates: Requirements 9.1, 9.2, 10.1, 10.3**
+**Validates: Requirements 9.1, 9.2**
 
-### Property 6: Tag Total composition
+### Property 6: Contributions and total composition (fast-check)
 
-*For any* tag, `net = inflow + outflow`, `outflow ≤ 0 ≤ inflow` and `memberCount = |members|` SHALL hold. The total SHALL equal the sum of full parent amounts over its members, and SHALL be unchanged by any active account or register filter.
+*For any* transaction set and tag:
+- `net = outflow + inflow`, `outflow ≤ 0 ≤ inflow` and `memberCount = |members|` SHALL hold;
+- each member's contribution SHALL be its parent amount when the tag is in the parent memo, and otherwise the sum of the amounts of its non-deleted split lines carrying the tag;
+- the total SHALL be unchanged by any Register scope or filter.
 
-**Validates: Requirements 10.1, 10.2, 10.4, 10.7, 10.8, 5.9**
+**Validates: Requirements 10.1, 10.2, 10.3, 10.4, 10.8, 11.6**
 
-### Property 7: Transfer pairs are named, never assumed to cancel
+### Property 7: Transfer pairs are named, never assumed to cancel (fast-check)
 
-*For any* two member transactions linked through a parent or subtransaction transfer ID, the composition SHALL list the pair. The net SHALL still be the plain sum of both full parent amounts.
+*For any* two members linked through a parent or subtransaction transfer ID, the composition SHALL list the pair. The net SHALL still be the plain sum of both members' contributions.
 
 **Validates: Requirements 10.5, 10.6**
 
-### Property 8: Apply then remove is the identity
+### Property 8: Apply then remove is the identity (fast-check)
 
-*For any* memo `m` that does not carry identity `i` and any valid spelling `s` of `i`, `removeIdentity(applyTag(m, s), i)` SHALL equal `m`. Domain memos are never `""` (see `src/ynab/map.ts`), so an empty `m` is `null` and the round trip returns `null`. `parseMemo(applyTag(m, s))` SHALL contain `m`'s tokens in their original order, followed by one token with spelling `s`.
+*For any* memo `m` that does not carry identity `i`, and any valid spelling `s` of `i`:
+- `removeIdentity(applyTag(m, s), i)` SHALL equal `m`. An empty `m` is `null`, so the round trip returns `null`.
+- `parseMemo(applyTag(m, s))` SHALL contain `m`'s tokens in their original order, followed by one token with spelling `s`.
 
 **Validates: Requirements 12.2, 12.4, 12.5**
 
-### Property 9: Rewrites touch only tag spans
+### Property 9: Rewrites touch only tag spans (fast-check)
 
-*For any* memo and any remove, rename, respell or tidy call, every code point outside the affected token spans SHALL be preserved in order. The exception is at most one whitespace code point per removed span, chosen by the gap rule. `\#` sequences, unrelated tokens and trimmed trailing punctuation SHALL be unchanged.
+*For any* memo and any remove or rename call, every code point outside the affected token spans SHALL be preserved in order. The exception is at most one whitespace code point per removed span, chosen by the gap rule. `\#` sequences, unrelated tokens and trimmed trailing punctuation SHALL be unchanged.
 
-**Validates: Requirements 12.4, 12.5, 13.5, 13.6, 13.8, 7.7**
+**Validates: Requirements 12.4, 12.5, 13.8, 7.7**
 
 ### Property 10: Nothing is truncated to fit
 
@@ -930,7 +954,7 @@ export interface BudgetSession {
 
 **Validates: Requirements 12.6, 12.7**
 
-### Property 11: Applying an existing tag is a no-op
+### Property 11: Applying an existing tag is a no-op (fast-check)
 
 *For any* transaction that already carries identity `i` in its parent or any split memo, `planApply` SHALL exclude it as `alreadyTagged` and produce no change for it.
 
@@ -938,229 +962,270 @@ export interface BudgetSession {
 
 ### Property 12: Split-only memberships are never written
 
-*For any* plan, no change SHALL target a transaction whose occurrences of the planned identity are only in split memos. No write payload SHALL contain a `subtransactions` field. The plan's `unreachableSplitOccurrences` SHALL equal the number of affected split occurrences.
+*For any* plan:
+- no change SHALL target a transaction whose occurrences of the planned identity are only in split memos;
+- no write payload SHALL contain a `subtransactions` field, or the ID of such a transaction;
+- the plan's `unreachableSplitOccurrences` SHALL equal the number of affected split occurrences.
 
-**Validates: Requirements 9.3, 9.4, 9.5, 12.9, 15.9, 15.10, 17.5, 22.2**
+**Validates: Requirements 9.3, 9.4, 9.5, 12.9, 15.10, 17.5, 22.2**
 
 ### Property 13: Merges and rename-onto-existing are set-based
 
-*For any* rename onto a distinct identity that already exists, the plan kind SHALL be `merge`. After the plan is applied, each transaction SHALL be a member of the target at most once, and the target's member count SHALL equal the size of the union of both member sets. *For any* rename whose target spelling has the same identity as the source, the plan kind SHALL be `respell`. Every parent-memo occurrence SHALL be rewritten to the target spelling, and no occurrence SHALL be removed.
+*For any* rename onto a distinct identity that already exists:
+- the plan kind SHALL be `merge`;
+- after it is applied, each transaction SHALL be a member of the target at most once;
+- the target's member count SHALL equal the size of the union of both member sets.
+
+*For any* rename whose target has the same identity as the source, every parent-memo occurrence SHALL be rewritten and none removed.
 
 **Validates: Requirements 13.2, 13.3**
 
-### Property 14: The confirmed scope is fixed
+### Property 14: Fixed scope, and no write without a passing recheck
 
-*For any* operation and any sequence of deltas received during it, the set of transaction IDs sent in `PATCH` requests SHALL be a subset of the confirmed plan's change IDs. Newly matching transactions SHALL appear only in `remainingWork`, which SHALL equal the change IDs of `replan(state, plan.request)` that are not in the confirmed scope.
+*For any* operation and any external edits during it:
+- the IDs sent in `PATCH` requests SHALL be a subset of the confirmed plan's change IDs;
+- a transaction SHALL be sent only if the immediately preceding pre-read showed it present, with memo equal to `before`, and a per-transaction replan giving the same `after`. Otherwise it SHALL end as `conflict` with the matching reason.
 
-**Validates: Requirements 16.4, 16.5**
+**Validates: Requirements 16.4, 16.5, 17.1, 17.2, 17.3**
 
-### Property 15: No write without a passing recheck
-
-*For any* interleaving of external edits in the fake YNAB, a transaction SHALL be included in a `PATCH` only if the immediately preceding pre-read showed its memo equal to `before` and no fingerprint field relevant to the plan changed. Otherwise it SHALL end as `skipped` with the matching reason. An amount-only change SHALL skip a transaction only when its planned change has `changesMembership` true.
-
-**Validates: Requirements 17.1, 17.2, 17.3, 4.6**
-
-### Property 16: Approval is carried
+### Property 15: Approval is carried
 
 *For any* write payload item, `approved` SHALL equal the `approved` value of the most recent pre-read snapshot of that transaction.
 
 **Validates: Requirements 17.4**
 
-### Property 17: Outcomes partition the scope honestly
+### Property 16: Results partition the scope honestly
 
-*For any* finished or paused operation, every planned transaction SHALL hold exactly one of completed, skipped, failed, unattempted or unknown. A paused or finished operation SHALL hold no `pending` item, and no transition SHALL overwrite a recorded completed, skipped or failed outcome. `completed` SHALL occur only when a server response or delta showed the memo equal to `after`. No automatic rollback write SHALL ever be sent.
+*For any* finished operation:
+- every change SHALL hold exactly one of `done`, `unchanged` or `conflict`, with a reason for each status other than `done`;
+- `done` SHALL occur only when a delta showed the memo equal to `after`;
+- no rollback write SHALL ever be sent.
 
-**Validates: Requirements 16.6, 17.6, 17.7, 17.9, 18.2, 18.3**
+*For any* unverified operation, every item not confirmed by a read SHALL still be `sent`, and writes SHALL be blocked.
 
-### Property 18: A single writer, and no silent resumption
+**Validates: Requirements 16.6, 17.6, 17.7, 17.9, 17.11, 18.1, 18.2, 18.3**
 
-*For any* event sequence (refresh success, connectivity restored, visibility change), no `PATCH` SHALL be sent while an operation is paused or has unknown outcomes unless `resume` or `verifyAgain` was invoked. At most one operation SHALL exist, and `start` SHALL be rejected while one does. After `cancel`, no `PATCH` SHALL be sent except one already sent, including when the cancel arrives during a pre-read, and including after that sent request ends in an Unknown Outcome, is verified, and would otherwise be resumable.
+### Property 17: A single writer, and no automatic restart
 
-**Validates: Requirements 4.4, 4.9, 18.4, 18.5, 18.6, 18.7, 18.8, 3.10**
+*For any* event sequence (refresh success, connectivity restored, visibility change):
+- no `PATCH` SHALL be sent after an operation stops, except by a new confirmed preview;
+- at most one operation SHALL be running or unverified, and `confirm` SHALL be rejected while one is;
+- after `cancel`, no `PATCH` SHALL be sent except one already in flight.
 
-### Property 19: A delta merge equals a fresh read
+**Validates: Requirements 4.4, 4.9, 18.4, 18.7, 18.8, 3.10**
 
-*For any* starting snapshot and any sequence of fake-YNAB mutations (including deleted transactions and subtransactions), merging deltas SHALL yield the same `DomainState` and `TagIndex` as a fresh full load. Deleted records SHALL never contribute membership, vocabulary, warnings or totals.
+### Property 18: A delta merge equals a fresh read (fast-check)
+
+*For any* starting snapshot and any sequence of fake-YNAB mutations, including deleted transactions and subtransactions, merging deltas SHALL yield the same `DomainState` and `TagIndex` as a fresh full load. Deleted records SHALL never contribute membership, vocabulary, markers or totals.
 
 **Validates: Requirements 3.2, 3.5, 4.5, 9.6**
 
-### Property 20: Near-duplicate detection is exactly the dash/underscore rule
+### Property 19: Near-duplicate detection is exactly the dash/underscore rule
 
-*For any* two distinct identities, a pair SHALL be suggested if and only if their keys (with `-` and `_` removed) are equal and nonempty. Dismissing one pair SHALL not hide any other pair. Detection SHALL never change identities, membership or totals.
+*For any* two distinct identities, a pair SHALL be marked if and only if their keys (with `-` and `_` removed) are equal and nonempty. Markers SHALL never change identities, membership or totals.
 
-**Validates: Requirements 15.1, 15.2, 15.3, 15.4, 15.5, 14.5**
+**Validates: Requirements 14.5, 15.1, 15.2, 15.3, 15.4**
 
-### Property 21: Warnings are deterministic and advisory
+### Property 20: Undo restores only exact matches
 
-*For any* transaction set and any input order, `deriveWarnings` SHALL return the same ordered lists under Decision 12. Deriving warnings SHALL produce no plan and no write.
-
-**Validates: Requirements 14.1, 14.3, 14.4, 14.5, 14.6**
-
-### Property 22: Undo restores only exact matches
-
-*For any* history entry and any current state, `planUndo` SHALL include a change only when the current memo equals `confirmedAfter`, and that change's `after` SHALL equal the original `before`. Every other entry change SHALL be counted as a known conflict.
+*For any* undo slot and current state, `planUndo` SHALL include a change only when the current memo equals `confirmedAfter`, and that change's `after` SHALL equal the original `before`. Every other slot change SHALL be a `changedSince` exclusion.
 
 **Validates: Requirements 19.1, 19.2, 19.3, 19.5**
 
-### Property 23: Ending a session clears everything
+### Property 21: Ending a session clears everything
 
-*For any* store state, after `disconnect`, `lock`, or a completed `switchBudget`:
+*For any* store state, after `disconnect` or a completed `switchBudget`:
+- the snapshot SHALL contain no transactions, memos, tag data, selection, preview, operation or undo slot from the previous Budget Session;
+- no result from a request issued for the previous Budget Session SHALL be applied, even one that resolved before the abort.
 
-- the snapshot SHALL contain no transactions, memos, tag data, selection, preview, operation, history or dismissals from the previous Budget Session;
-- after `disconnect` or `lock`, the `YnabClient` SHALL be disposed; after `switchBudget`, the same client SHALL remain connected and every in-flight read from the previous Budget Session SHALL be aborted, and no result from the previous Budget Session SHALL be merged into the new one, even one that resolved before the abort;
-- no Refresh Scheduler from the previous Budget Session SHALL run another check.
+After `disconnect`, the client SHALL be disposed and `patStorage` SHALL hold no PAT. After `switchBudget`, the client and any Remembered PAT SHALL remain.
 
-After `disconnect` or `lock`, no reference to the PAT SHALL remain in the store.
+**Validates: Requirements 2.2, 2.8, 3.9, 19.6**
 
-**Validates: Requirements 2.2, 2.3, 2.8, 3.9, 15.6, 19.6**
+### Property 22: Network boundary
 
-### Property 24: Network boundary
-
-*For any* request issued by `YnabClient`, the URL origin SHALL be `https://api.ynab.com` and the fetch init SHALL include `cache: 'no-store'` and `credentials: 'omit'`. A request to any other origin SHALL throw before a header is attached.
+*For any* request issued by `YnabClient`:
+- the URL origin SHALL be `https://api.ynab.com`;
+- the fetch init SHALL include `cache: 'no-store'` and `credentials: 'omit'`;
+- a request to any other origin SHALL throw before a header is attached.
 
 **Validates: Requirements 1.4, 1.11**
 
-### Property 25: Selection scope
+### Property 23: Selection scope
 
-*For any* sequence of user filter or account changes applied to a nonempty selection, the selection SHALL become empty and exactly one `selectionCleared` event SHALL be emitted per change. Year jumps and delta merges SHALL not emit it. `Select all` SHALL select exactly the IDs matching the current filters in the active account.
+*For any* sequence of user filter or scope changes applied to a nonempty selection:
+- the selection SHALL become empty, and exactly one `selectionCleared` event SHALL be emitted per change;
+- delta merges SHALL not emit the event;
+- `Select all` SHALL select exactly the IDs matching the current filters in the current scope.
 
 **Validates: Requirements 6.2, 6.3, 6.4, 6.5, 6.6, 4.5**
 
+### Property 24: A PAT is stored only by explicit choice
+
+*For any* sequence of connects:
+- `patStorage` SHALL hold a PAT only after a successful `connect(pat, true)`;
+- it SHALL hold none after `connect(pat, false)` on an empty store, after `disconnect`, or after any 401.
+
+**Validates: Requirements 1.3, 2.2, 2.9, 2.10, 22.3**
+
 ## Error Handling
 
-- **PAT rejected on connect (401)**: stay on `ConnectScreen` with the message "YNAB rejected this token", and never echo the token back (Req 3.7).
-- **No plans, or plan with no transactions**: show a distinct empty state, not an error (Req 3.8).
+- **PAT rejected on connect (401)**: stay on `ConnectScreen` with "YNAB rejected this token". Never echo the token back. Delete any Remembered PAT (Req 2.10, 3.7).
+- **Remembering fails** (storage unavailable): connect anyway, and say the token could not be remembered.
+- **No plans, or a plan with no transactions**: show a distinct empty state, not an error (Req 3.8).
 - **Initial load fails** (any failure kind): `loadFailed` offers Retry and Disconnect. No partial vocabulary or totals are shown (Req 3.6–3.7).
-- **Initial transactions request times out or returns 503**: switch to the yearly windowed load automatically, with a progress count. If a window fails, the result is `loadFailed`.
-- **Refresh failure** (network, 5xx, 429, 403 or timeout): keep the last data, show `Updates paused` with Retry, and block writes. This state is non-blocking for browsing (Req 4.7–4.8).
-- **401 mid-session**: treat it as a refresh failure whose message explains the token may have been revoked, offering Retry and Disconnect. Writes stay blocked.
-- **404 plan mid-session**: refresh failure, with the message "This budget is no longer available", offering a budget switch and Disconnect.
-- **403 `data_limit_reached`**: refresh or load failure with YNAB's explanation. If it happens during a write, treat it as a failure for that batch. Nothing was saved, and the delta verify confirms it.
-- **Write 400**: verify and classify each item, then split only the items still at `before` (Decision 8). An isolated item becomes `skipped: rejected`, and is never trimmed or retried automatically (Req 12.8).
-- **Write 429**: pause with reason `rateLimited`. Resume stays available, and YNAB's rolling window decides whether it succeeds (Req 18.5).
-- **Write network loss before a response, 5xx, or client timeout**: pause with reason `unknownOutcome`, then verify automatically. If verification fails, stay paused with Verify again. Writes stay blocked and browsing continues (Req 18.1–18.3, 18.8).
-- **Session ends mid-write** (Disconnect, lock, reload): no wait. The warning copy is shown beforehand where the app controls the trigger (Req 2.6–2.7, 18.9).
-- **Stale preview after a refresh**: disable Confirm and show "This preview is out of date — review again" (Req 4.6).
-- **Invalid tag text in apply or rename**: show an inline validation message naming the reason from `validateTagText`, and create no plan.
-- **CSP violation at runtime**: the browser blocks it. No reporting endpoint is configured, because a report would be a third-party or host request. End-to-end tests fail on any `securitypolicyviolation` event.
-- **Unexpected exception in the UI**: an error boundary shows "Something went wrong" with Disconnect. No stack traces or data are sent anywhere, and nothing is logged.
+- **Refresh failure** (network, 5xx, 429, 403 or timeout): keep the last data, show `Updates paused` with Retry, and block writes. Browsing continues (Req 4.7–4.8).
+- **401 mid-session**: delete any Remembered PAT. Pause updates with "Your token may have been revoked", and offer Disconnect. Writes stay blocked.
+- **404 plan mid-session**: pause updates with "This budget is no longer available", and offer Switch budget and Disconnect.
+- **Any write failure** (400, 403 including `data_limit_reached`, 429, 5xx, network, timeout, or a 200 with an unexpected memo): stop and verify (Decision 8). The results give each item's status and reason, and a 400 shows YNAB's message. Nothing is trimmed or retried automatically (Req 12.8, 18.1–18.2).
+- **Verification fails**: the operation stays unverified with Verify again. Writes stay blocked, and browsing continues (Req 18.3).
+- **Preview changed at confirm**: replace the preview and say "This changed since you reviewed it". Nothing is written (Req 4.6).
+- **Session ends mid-write** (Disconnect or reload): the session clears with no wait. Disconnect warns first that sent requests may still land (Req 2.6–2.7, 18.9).
+- **Invalid tag text in apply or rename**: show an inline message naming the reason, and create no plan (Req 12.11, 13.9).
+- **CSP violation at runtime**: the browser blocks it. No reporting endpoint is configured, and end-to-end tests fail on any `securitypolicyviolation`.
+- **Unexpected exception in the UI**: an error boundary shows "Something went wrong" with Disconnect. Nothing is logged or sent anywhere.
 
 ## Testing Strategy
 
-### Unit Tests (`vp test`, importing from `vite-plus/test`)
+The repository works test-first: each slice's tests are written alongside or before its code.
 
-- `parseMemo`: the ADR 0004 example table, Unicode cases (`#Café` composed and decomposed, `#家計。`, `#٣`, `#Ⅻ`, `##Household`, `\#`, `C:\#temp`, `é#tag` in both forms), `#-` as a tag, and `null` or empty memos.
-- `tagIdentity`: `ß`/`ss`, final sigma, Turkic dotted I (not special-cased), full-width versus ASCII and `m²` versus `m2` kept distinct, `ﬁ` folding to `fi`, and the pinned `CASE_FOLDING_UNICODE_VERSION`.
-- `rewrite.ts`: the prototype's `·` regression, removal at start, end and middle, the line-break preference, rename keeping extra markers, merge removing the source occurrence, tidy, and over-length handling.
-- `buildTagIndex`: the ADR 0005 examples (split-only membership, a transfer pair inside a split, closed accounts, unapproved transactions, deleted subtransactions), plus provenance: `#tax` in a parent with `#Tax` only in a split, and `##Tax` only in a split, yield the right `parentTransactionCount`, `splitTransactionCount` and `CleanupSite` flags. `#Tax` in both the parent and a split of one transaction gives `parentTransactionCount` 1 and `splitOccurrenceCount` 1. One `#Tax` in the parent plus one in a split raises no repeat cleanup warning. `##Tax #Tax` in one parent memo counts as one tidyable transaction.
-- `buildRegister`: Tag facet counts with search, category, status and other tag filters active under Match all and Match any equal the rows shown for that tag.
-- `deriveWarnings`: ordering, `#Home-Repair`/`#Home_Repair`/`#HomeRepair` producing three pairs, `#Tax`/`#Taxi` not flagged, dismissal isolation, and split-only directions.
-- `plan*` functions: exclusions, outside-account counts, merge detection, and `planUndo` conflicts. `replan` of every `PlanRequest` kind reproduces the original plan on unchanged state. `remainingWork` reports an exclusion that became eligible. The write engine stops a rename whose replan became a merge after an external edit adds the target identity, even though the transactions it would still write have unchanged `after` memos. `changesMembership` is false for a remove whose identity survives in a split, and `recheck` then ignores an amount-only change, as it does for respell and tidy, but not for an apply, ignores split tokens of untouched identities, and ignores a move between two accounts that are both outside `plan.activeAccountId` while flagging a move across it.
-- `ynab/errors.ts`: status-to-failure classification. `ynab/client.ts`: fetch init, origin assertion and timeout abort.
-- `idleLock` and `refreshScheduler` with fake timers and fake visibility: 60-second cadence, return-to-tab check, write pause, and lock after a hidden period. For the scheduler, calling the disposer before the next tick removes the visibility listener, cancels the timer, runs no further checks, and drops the result of a check already in flight.
-- `store`: a delayed read from the old Budget Session resolves after `switchBudget` and is not merged, whether it was aborted or had already resolved. This holds when switching away from a budget and back again to the same plan, and across a disconnect and reconnect.
-- `ynab/errors.ts`: an abort with the timeout reason is `timeout`. Aborts from `dispose` or the session signal are `cancelled`, before `fetch`, while waiting for headers and while reading the body. A `cancelled` read raises no `Updates paused`, and a `cancelled` write creates no Unknown Outcome.
-- `writeEngine`: after a batch returns 400 with some items already saved by the fake YNAB, those items are `completed` and never resent, an item deleted meanwhile is `skipped: gone`, and only items still at `before` are split.
+### Unit tests (`vp test`)
 
-### Property-Based Tests (fast-check)
+- **`parseMemo`**: the ADR 0004 example table and Unicode cases (`#Café` composed and decomposed, `#家計。`, `#٣`, `##Household`, `\#`, `C:\#temp`, `é#tag` in both forms), plus `null` and empty memos.
+- **`tagIdentity`**: case variants, NFC/NFD, `Straße`/`STRASSE` distinct, full-width distinct, `ﬁ`/`fi` distinct. **`validateTagText`**: every rejection reason.
+- **`rewrite.ts`**: the `·` regression; removal at the start, end and middle; the line-break preference; rename keeping extra markers; merge removing the source occurrence; same-identity rename; over-length handling.
+- **`buildTagIndex`**:
+  - the restaurant example: one bill split into an own share and three `#owed-*` lines, each contributing its line, plus a repayment inflow netting `#owed-alice` to zero;
+  - a parent-memo tag overriding split tags;
+  - one split line carrying a tag twice;
+  - a transfer pair inside a split;
+  - closed accounts, unapproved transactions and deleted subtransactions;
+  - Canonical Spelling ties.
+- **`deriveMarkers`**: `#Home-Repair`/`#Home_Repair`/`#HomeRepair` yields three pairs. `#Tax`/`#Taxi` and `#Grocries`/`#Groceries` are not flagged. Split-only tags are included. Single-use is flagged.
+- **`buildRegister`**:
+  - the All accounts scope and per-account scope;
+  - the account name shown in All accounts;
+  - tag facet counts equal the rows shown;
+  - search across payee, account, category and split memos.
+- **`plan*`**:
+  - exclusions;
+  - merge detection;
+  - `replan` of every request kind reproduces the plan on unchanged state;
+  - `recheck` returns `gone`, `memoChanged` and `replanDiffers`, and ignores amount and account edits that leave `after` unchanged;
+  - `planUndo` produces `changedSince` exclusions;
+  - invalid spellings throw.
+- **`ynab/errors.ts` and `ynab/client.ts`**:
+  - status-to-failure classification;
+  - fetch init, origin assertion and timeout abort;
+  - aborts from `dispose` or a session signal are `cancelled`.
+- **`patStorage`**: read, remember and forget, with storage that throws.
+- **`store`**:
+  - connect with and without remember;
+  - start-up with a Remembered PAT;
+  - a 401 forgets the token;
+  - a delayed read from an old Budget Session is discarded after `switchBudget` and after `disconnect`;
+  - the confirm-time replan replaces a changed preview.
+- **`refreshOnReturn`**: refreshes on becoming visible, but not during a write or while a refresh is in flight. The disposer removes the listener.
+- **`writeEngine`**, against `test/fakeYnab.ts` with scripted faults:
+  - all done;
+  - memo conflict;
+  - a deleted transaction;
+  - a 400 on one batch with another batch already done;
+  - a timeout whose write committed (verify gives `done`);
+  - a timeout whose write did not commit (`unchanged`);
+  - a 429;
+  - cancel mid-run;
+  - verify failure, then Verify again;
+  - `approved` carried;
+  - split-only IDs absent from every `PATCH`;
+  - the final verify always runs.
 
-Arbitraries in `test/arbitraries.ts` generate memos from a weighted alphabet: ASCII, Latin-1, CJK, combining marks, `Po`/`Pe`/`Pf`/`Pd`/`Pc` punctuation, `Nd` digits, `#`, `\` and all `White_Space` code points. They also generate transactions with splits and transfers, and fake-YNAB mutation scripts.
+### Property-based tests (fast-check)
 
-- **Property 1, never truncated**, and **Property 2, grammar examples and escapes**: `src/domain/grammar/parseMemo.ts`.
-- **Property 3, identity invariance**: `src/domain/grammar/identity.ts`.
-- **Property 4, canonical spelling order-independence**; **Property 5, membership set**; **Property 6, total composition**; **Property 7, transfer pairs**: `src/domain/tags/tagIndex.ts`.
-- **Property 8, apply/remove round trip**; **Property 9, span-only rewrites**; **Property 10, no truncation**: `src/domain/memo/rewrite.ts` and `plan.ts`.
-- **Property 11, no-op apply**; **Property 12, split-only never written**; **Property 13, set-based merge**: `src/domain/operations/plan.ts`.
-- **Property 14, fixed scope**; **Property 15, recheck before write**; **Property 16, approval carried**; **Property 17, outcome partition**; **Property 18, single writer**: `src/writes/writeEngine.ts` against `test/fake-ynab`, with fault-injection schedules.
-- **Property 19, delta equals fresh read**: `src/ynab/delta.ts` with fake-YNAB mutation scripts.
-- **Property 20, near-duplicate rule**, and **Property 21, deterministic warnings**: `src/domain/tags/warnings.ts`.
-- **Property 22, exact-match undo**: `planUndo`.
-- **Property 23, session clearing**, and **Property 25, selection scope**: `src/session/store.ts`.
-- **Property 24, network boundary**: `src/ynab/client.ts` with a recording `fetchImpl`.
+Arbitraries in `test/arbitraries.ts` generate:
+- memos from a weighted alphabet: ASCII, Latin-1, CJK, combining marks, `Po`/`Pe`/`Pf`/`Pd`/`Pc` punctuation, `Nd` digits, `#`, `\` and all `White_Space` code points;
+- transactions with splits, tagged split lines and transfers;
+- fake-YNAB mutation scripts.
 
-### Fake YNAB (`test/fake-ynab/`)
+| Properties | Module |
+|---|---|
+| 1 (no truncation) | `grammar/parseMemo.ts` |
+| 3 (identity invariance) | `grammar/identity.ts` |
+| 6 (Contributions and totals), 7 (transfer pairs) | `tags/tagIndex.ts` |
+| 8 (apply/remove round trip), 9 (span-only rewrites) | `memo/rewrite.ts` |
+| 11 (no-op apply) | `operations/plan.ts` |
+| 18 (delta equals fresh read) | `ynab/delta.ts` with mutation scripts |
 
-This is an in-memory simulator of the endpoints used above. It covers:
+### Fake YNAB (`test/fakeYnab.ts`)
 
-- **Data**: plans, accounts, categories and transactions, with `server_knowledge`, delta semantics (including `deleted` records and the one-year default when `since_date` is omitted), 400 for memos over 500 code points, and the `approved` default when omitted.
-- **Fault injection**: latency, 429, 5xx, a timeout after commit, a dropped connection before or after commit, a whole-batch 400, a 400 after some items in the batch were saved, and scripted concurrent external edits.
+This is a small in-memory simulator of the endpoints used above:
+- **Data**: plans, accounts, categories and transactions with `server_knowledge` and delta semantics (including `deleted` records), a 400 for memos over 500 code points, and the `approved` default when omitted.
+- **Scripted faults**: a queue of per-request outcomes (`429`, `5xx`, `400`, `timeoutAfterCommit`, `dropBeforeCommit`, `externalEdit(id, memo)`).
 
-It is exposed two ways: as a `fetchImpl` for `vp test` integration tests, and as a Playwright `page.route('https://api.ynab.com/**')` handler. No service worker is involved.
+It is exposed as a `fetchImpl` for `vp test`, and as a Playwright `page.route('https://api.ynab.com/**')` handler.
 
-### Integration, UI, Accessibility and Security Tests
+### End-to-end, accessibility and boundary tests
 
-- **Component tests** (`vp test`, Testing Library, jsdom): Impact Preview content, the undo confirm summary, the `Select all N matching transactions` label, the toast's live-region attributes and focus retention, and the stale preview state.
-- **End-to-end** (`@playwright/test`, run against `vp preview` with the `vercel.json` headers):
-  - projects for Desktop Chrome, Desktop Firefox, WebKit and iPhone 14 viewports;
-  - the core workflow walkthrough from Req 21.1 against the fake YNAB;
-  - failure scenarios from Req 21.4–21.5: memo conflict, eligibility conflict, partial success, timeout leading to an Unknown Outcome and verification, 429 then Resume, cancellation, reload mid-operation, undo conflict, refresh failure with `Updates paused` and blocked writes, and a budget switch that clears state;
-  - keyboard-only runs of every core workflow;
-  - `identity.spec.ts`: the `parseMemo` and `tagIdentity` example tables evaluated in each browser, so the NFC baseline is checked in real engines (Decision 4).
-- **Accessibility**: `@axe-core/playwright` scans each screen and dialog at desktop and phone sizes, and fails on serious or critical violations (Req 20.2, 20.5).
-- **CSP and boundary**:
-  - every end-to-end test registers a `securitypolicyviolation` listener and fails on any event;
-  - one spec asserts every network request goes to the app origin (assets only, no `Authorization` header and no financial query strings) or to `https://api.ynab.com`;
-  - `scripts/check-build-csp.ts` runs in CI after the build;
-  - `scripts/verify-deployment-headers.ts <url>` checks production and preview response headers against `vercel.json`. For a protected preview, it sends Vercel's automation bypass secret from an environment variable, never from a committed file (Req 1.7–1.8, 21.6).
+These use `@playwright/test`, run against `vp preview` with the `vercel.json` headers, in two projects: Desktop Chromium and a phone viewport (Pixel 7). Every locator uses `getByRole` with an accessible name. A control that cannot be found that way is a failing test (Req 20.2, 21.3).
 
-### Manual Release Validation (recorded in `docs/release/v1-validation.md`)
+- **`walkthrough.spec.ts`**:
+  - Slice 1: connect with and without remember, budget choice, the overview, the reader with split-line contributions and a transfer pair, and markers.
+  - Slices 2–3 extend it: discovery in one account and in All accounts, Select all offscreen, the tag picker, apply and remove, results, undo, rename, merge and delete.
+  - It runs `@axe-core/playwright` on each screen and dialog, and fails on serious or critical violations.
+- **`failures.spec.ts`** (slice 2): memo conflict, partial success, a timeout leading to verification and then Verify again, a 429, cancellation, an undo conflict, a refresh failure with `Updates paused` and blocked writes, and a selection-cleared toast (Req 21.4–21.5).
+- **`boundary.spec.ts`**:
+  - every request goes to the app origin (assets only, no `Authorization` header) or to `https://api.ynab.com`;
+  - a `securitypolicyviolation` listener fails the test on any event;
+  - `localStorage` holds `ynot.pat` only after Remember, and nothing after Disconnect;
+  - API responses carry `no-store` handling (Req 1.4, 1.11, 2.9, 21.6).
 
-- **Live walkthrough**: against a controlled YNAB test budget, covering history older than a year, closed and tracking accounts, split-borne tags, transfers, unapproved transactions, and a memo with prose and `\#`. Check afterwards in YNAB that approval, cleared status, flags and other fields are unchanged (Req 21.1–21.2).
-- **Screen readers**: VoiceOver on macOS Safari (desktop) and on iOS Safari (phone), each through every core workflow of Req 20.1: connection, Budget choice and switching, Register browsing and filtering, selection including offscreen Select all and the selection-cleared toast announcement, apply and remove, Tag reading, vocabulary management (rename, merge, delete, spelling consistency, tidy, warnings and dismissal), Impact Preview including the exact memo diff, results, recovery (pause, Resume, Verify again) and undo. Axe scans do not count as screen-reader evidence (Req 21.3).
-- **HTTP cache**: in Firefox `about:cache?storage=disk`, confirm there are no `api.ynab.com` entries after API use, after a reload and after Disconnect (Req 21.6).
-- **Recording**: each check is marked as passed, failed or not performed. Simulated fake-YNAB results are never recorded as live-write evidence (Req 21.7).
+### Release validation
 
-### Contract checks to run early in the build
+These checks are recorded in the release PR description:
 
-These confirm API behaviour the design depends on. Each is a documented gap in YNAB's specification:
+- **Before slice 1 counts as first usable**: a live walkthrough on a controlled YNAB test budget. It covers history older than a year, closed and tracking accounts, split lines tagged per person, a transfer, unapproved transactions, and a memo with prose and `\#` (Req 21.1).
+- **Before writing to a real budget**: a live walkthrough of slices 2–3 on the test budget. Afterwards, check in YNAB that approval, cleared status and flags are unchanged (Req 21.2).
+- **Headers**: `curl -I` the production URL, and compare the CSP and security headers with `vercel.json` (Req 21.6).
 
-1. `PATCH` with only `id`, `memo` and `approved` leaves `cleared`, `flag_color`, `category_id`, `payee_id` and `date` unchanged.
-2. A `since_date` equal to `first_month` returns the earliest transactions, including any dated before the first month. If it does not, the history start must move earlier.
+### Contract checks (before slice 2 writes)
+
+These confirm API behaviour the design depends on, each a gap in YNAB's documentation. They are run with `scripts/contract-checks.ts` against the test budget, with the PAT supplied by environment variable:
+
+1. `PATCH` with only `id`, `memo` and `approved` leaves `cleared`, `flag_color`, `category_id`, `payee_id`, `date` and subtransactions unchanged.
+2. A `since_date` equal to `first_month` returns the earliest transactions.
 3. The maximum accepted `PATCH` batch size is at least 50.
 4. The delta transactions endpoint with `since_date` returns changes to older transactions.
-5. Whether YNAB stores `""` or `null` for a memo emptied by removal, and whether it distinguishes them anywhere a user can see. The `""` to `null` mapping in `src/ynab/map.ts` depends on this.
+5. Whether YNAB stores `""` or `null` for a memo emptied by removal, and whether a user can see any difference between them.
 
-If a check fails, it goes through the change protocol before the dependent code is built.
+If a check fails, it goes through the change protocol before the dependent code is built. Checks 2 and 5 also affect slice 1's loader and mapper, but slice 1 is read-only, so it can ship and be corrected if needed.
 
 ### Checks and CI
 
-- `vp check`: formatting, linting and type checks. It must pass before merge.
-- `vp test`: unit, property and component tests, with fast-check.
-- `vp build`, then `scripts/check-build-csp.ts`.
-- `vp run e2e`: builds, starts `vp preview`, and runs Playwright across the desktop and phone projects.
-- The Vite+ `staged` configuration runs `vp check --fix` on commit.
+- `vp check`: formatting, linting (including the storage and console bans) and type checks.
+- `vp test`: unit, property and component tests.
+- `vp build`.
+- `vp run e2e`: builds, starts `vp preview`, and runs Playwright in both projects.
 
-### Test File Organization
+### Test file organization
 
 ```text
 src/
-  domain/
-    grammar/parseMemo.test.ts
-    grammar/identity.test.ts
-    tags/tagIndex.test.ts
-    tags/warnings.test.ts
-    register/register.test.ts
-    memo/rewrite.test.ts
-    operations/plan.test.ts
-  ynab/client.test.ts
-  ynab/delta.test.ts
-  session/store.test.ts
-  session/refreshScheduler.test.ts
-  session/idleLock.test.ts
+  domain/grammar/{parseMemo,identity}.test.ts
+  domain/tags/{tagIndex,markers}.test.ts
+  domain/register/register.test.ts
+  domain/memo/rewrite.test.ts
+  domain/operations/plan.test.ts
+  ynab/{client,errors,delta}.test.ts
+  session/{store,patStorage,refreshOnReturn}.test.ts
   writes/writeEngine.test.ts
   ui/**/*.test.tsx
 test/
   arbitraries.ts
-  fake-ynab/
+  fakeYnab.ts
 e2e/
   walkthrough.spec.ts
   failures.spec.ts
-  selection-refresh.spec.ts
-  accessibility.spec.ts
-  boundary-csp.spec.ts
-  identity.spec.ts
+  boundary.spec.ts
 scripts/
-  check-build-csp.ts
-  verify-deployment-headers.ts
-  generate-case-folding.ts
+  contract-checks.ts
 ```
