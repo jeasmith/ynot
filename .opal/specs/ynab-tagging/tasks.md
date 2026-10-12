@@ -79,7 +79,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Property 2 is covered by the example table in 3.3
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 8.1, 8.2, 8.3_
 
-  - [ ] 3.6 Implement the Tag Index with Contributions
+  - [x] 3.6 Implement the Tag Index with Contributions
     - Add `src/domain/tags/tagIndex.ts` with `buildTagIndex`, which derives:
       - membership as a set over parent and non-deleted split memos
       - per-member `source` and `contributingAmounts` (parent amount, or each tagged split line once)
@@ -94,12 +94,12 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
       - **Canonical Spelling:** ties broken by date and code point (Property 4); repeated occurrences do not change membership (Property 5)
     - _Requirements: 8.4, 8.5, 8.6, 8.7, 9.1, 9.2, 9.6, 14.4, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.8_
 
-  - [ ] 3.7 Write property tests for Contributions and transfer pairs
+  - [x] 3.7 Write property tests for Contributions and transfer pairs
     - Property 6: Contributions and total composition, including that the total is unchanged by scope or filters
     - Property 7: transfer pairs are named and never assumed to cancel
     - _Requirements: 10.1, 10.2, 10.3, 10.5, 10.6, 10.8_
 
-  - [ ] 3.8 Implement markers
+  - [x] 3.8 Implement markers
     - Add `src/domain/tags/markers.ts`: `nearDuplicateKey` and `deriveMarkers`, with near-duplicates (including split-only tags) and single-use
     - Unit tests (Property 19):
       - `#Home-Repair`/`#Home_Repair`/`#HomeRepair` give three pairs
