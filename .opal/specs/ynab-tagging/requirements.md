@@ -49,7 +49,7 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 - **All accounts**: The Register scope that covers every account in the Budget at once, offered alongside the per-account choices.
 - **Register**: The complete, uncut sequence of Transactions in the current scope: the Active Account, or All accounts. Filters narrow its display, not its underlying history.
 - **Tag Vocabulary**: The distinct Tags present in one Budget. A Tag leaves the vocabulary when its final association is removed.
-- **Tag Identity**: The tag text in Unicode Normalization Form C (NFC), then lowercased with the default Unicode lowercase mapping, which does not depend on locale. It is used for membership comparisons and is distinct from the display spelling.
+- **Tag Identity**: The tag text in Unicode Normalization Form C (NFC), then lowercased with the default Unicode lowercase mapping, which does not depend on locale, then normalized to NFC again. It is used for membership comparisons and is distinct from the display spelling.
 - **Canonical Spelling**: The spelling carried by the most distinct Transactions, with ties broken toward the earliest Transaction and then by code point. It is derived, governs display only, and does not change Tag Identity.
 - **Tag Association**: Set membership created when a Tag Identity appears in a Transaction's own memo or any of its non-deleted split memos. Repetitions contribute once.
 - **Contribution**: The amount a member Transaction adds to a Tag Total. If the Tag Identity is in the parent memo, it is the full signed parent amount. Otherwise it is the sum of the signed amounts of the non-deleted split lines whose memos carry the Tag Identity.
@@ -178,12 +178,12 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 
 #### Acceptance Criteria
 
-1. WHEN parsing a memo, THE tag reader SHALL recognize a candidate `#` only at memo start or after a character outside Unicode general categories `L*` and `N*`, and only when it is not immediately preceded by `\`; a combining mark (`M*`) before the `#` SHALL be judged by the base character it modifies, so canonically equivalent memos such as precomposed and decomposed `é#tag` parse identically.
+1. WHEN parsing a memo, THE tag reader SHALL recognize a candidate `#` only at memo start or after a character outside Unicode general categories `L*` and `N*`, and only when it is not immediately preceded by `\` or by a `#` that is not itself a candidate; a combining mark (`M*`) before the `#` SHALL be judged by the base character it modifies, so canonically equivalent memos such as precomposed and decomposed `é#tag` parse identically.
 2. WHEN a candidate begins with additional consecutive `#` markers, THE tag reader SHALL skip those extra markers and read the following non-whitespace run as one candidate tag text.
 3. THE tag reader SHALL end a candidate at the next whitespace or memo end, trim trailing characters of Unicode general categories `Po`, `Pe`, and `Pf`, and then reject an empty result or a result consisting only of Unicode decimal digits (`Nd`).
 4. THE tag reader SHALL preserve dashes (`Pd`), connectors (`Pc`), accents, and other characters not removed by criterion 7.3, without imposing an ASCII tag alphabet or truncating at an unfamiliar character.
 5. THE tag reader SHALL recognize examples such as `#Café`, `#Grüße`, `#Home_Repair`, `#Cornwall-2026`, `Paint,#Home-Repair`, and `(#Tax`, subject to the same grammar.
-6. THE tag reader SHALL treat `catalogue#kitchen`, `C#`, a bare `#`, `#3.`, and `#٣` as prose rather than Tags.
+6. THE tag reader SHALL treat `catalogue#kitchen`, `catalogue##kitchen`, `\##tag`, `C#`, a bare `#`, `#3.`, and `#٣` as prose rather than Tags.
 7. WHEN a memo contains `\#`, THE application SHALL treat that hash as literal prose; all other backslashes SHALL remain untouched, and Ynot SHALL NOT insert escapes on the user's behalf.
 8. WHEN reading parent memos and split memos, THE application SHALL apply the same grammar.
 9. WHEN a memo is null or empty, THE tag reader SHALL derive no Tags from it.
@@ -194,7 +194,7 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 
 #### Acceptance Criteria
 
-1. THE application SHALL derive Tag Identity by normalizing tag text to Unicode Normalization Form C (NFC) and then applying the default Unicode lowercase mapping, independent of locale. Canonically equivalent precomposed and decomposed text SHALL share an identity, and `#Trip` and `#TRIP` SHALL share an identity. Full case folding is not applied, so `#Straße` and `#STRASSE` SHALL remain distinct identities (decision 11).
+1. THE application SHALL derive Tag Identity by normalizing tag text to Unicode Normalization Form C (NFC) then applying the default Unicode lowercase mapping, independent of locale, and then normalizing to NFC again, because lowercasing can leave a composable sequence outside NFC. Canonically equivalent precomposed and decomposed text SHALL share an identity, and `#Trip` and `#TRIP` SHALL share an identity. Full case folding is not applied, so `#Straße` and `#STRASSE` SHALL remain distinct identities (decision 11).
 2. THE application SHALL NOT apply compatibility normalization to Tag Identity, so compatibility variants such as full-width `#ＴＡＸ` and `#TAX`, superscript `#m²` and `#m2`, or the ligature in `#ﬁle` and `#file` SHALL remain distinct identities.
 3. THE application SHALL use the single Tag Identity contract of criteria 8.1–8.2 in the tag reader, membership, totals, Tag Vocabulary, Vocabulary Warnings, and every writer and SHALL NOT use Canonical Spelling as a separate stored identity.
 4. WHEN choosing Canonical Spelling, THE application SHALL prefer the spelling carried by the greatest number of distinct member Transactions, counting a spelling at most once per Transaction across its parent and split memos.

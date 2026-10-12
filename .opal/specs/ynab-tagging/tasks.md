@@ -38,7 +38,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - _Requirements: 1.5, 1.7, 1.8, 1.9_
 
   - [x] 1.3 Add CI
-    - Add `.github/workflows/ci.yml`: `pnpm install --frozen-lockfile`, `vp check`, `vp test`, `vp build`
+    - Add `.github/workflows/ci.yml`: `voidzero-dev/setup-vp`, `vp install --frozen-lockfile`, `vp check`, `vp test`, `vp build`
     - The end-to-end job is added in task 6.1
     - _Requirements: 1.7, 21.3_
 

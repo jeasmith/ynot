@@ -37,8 +37,8 @@ export function parseMemo(memo: string | null): ParsedMemo {
   if (memo === null || memo === '') return NO_TAGS;
 
   const tokens: TagToken[] = [];
-  // Whether the base character before the current position blocks a `#`: a backslash, a letter
-  // or a digit. Combining marks are skipped so they are judged by their base character; a mark
+  // Whether the base character before the current position blocks a `#`: a backslash, a letter,
+  // a digit, or a `#` that was itself blocked. Combining marks are skipped so they are judged by their base character; a mark
   // with no base leaves this false, which is the same as the memo start.
   let blocked = false;
   let i = 0;
@@ -51,7 +51,11 @@ export function parseMemo(memo: string | null): ParsedMemo {
       i = token.runEnd;
       continue;
     }
-    if (!COMBINING_MARK.test(ch)) blocked = ch === '\\' || LETTER_OR_DIGIT.test(ch);
+    // A `#` that could not start a tag passes that on to a `#` right after it, so
+    // `catalogue##kitchen` and `\\##tag` stay prose.
+    if (!COMBINING_MARK.test(ch)) {
+      blocked = ch === '\\' || LETTER_OR_DIGIT.test(ch) || (ch === '#' && blocked);
+    }
     i += ch.length;
   }
 

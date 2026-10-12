@@ -1,9 +1,12 @@
 // Tag Identity and tag text validation (design: Decision 4; ADR 0004 and its 2026-10-11 amendment).
 export type TagIdentity = string & { readonly __brand: 'TagIdentity' };
 
-/** NFC, then the default Unicode lowercase mapping. Locale-independent (Decision 4). */
+/**
+ * NFC, then the default Unicode lowercase mapping, then NFC again, because lowercasing can leave a
+ * composable sequence (for example U+03CB U+0300) outside NFC. Locale-independent (Decision 4).
+ */
 export function tagIdentity(text: string): TagIdentity {
-  return text.normalize('NFC').toLowerCase() as TagIdentity;
+  return text.normalize('NFC').toLowerCase().normalize('NFC') as TagIdentity;
 }
 
 // These three classes are the same ones parseMemo uses to bound a token. They are repeated here

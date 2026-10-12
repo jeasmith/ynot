@@ -18,11 +18,13 @@ const nonCodeIgnores = [
   'skills-lock.json',
 ];
 
-const restrictedStorageGlobals = ['localStorage', 'sessionStorage', 'indexedDB', 'caches'].map(
-  (name) => ({
-    name,
-    message: 'Browser storage is banned (Req 1.3). Only src/session/patStorage.ts may touch it.',
-  }),
+const storageNames = ['localStorage', 'sessionStorage', 'indexedDB', 'caches'];
+const storageMessage =
+  'Browser storage is banned (Req 1.3). Only src/session/patStorage.ts may touch localStorage.';
+const restrictedStorageGlobals = storageNames.map((name) => ({ name, message: storageMessage }));
+// The globals rule only sees bare identifiers, so also ban reaching storage through these objects.
+const restrictedStorageProperties = ['window', 'globalThis', 'self'].flatMap((object) =>
+  storageNames.map((property) => ({ object, property, message: storageMessage })),
 );
 
 export default defineConfig({
@@ -60,13 +62,21 @@ export default defineConfig({
         rules: {
           'no-console': 'error',
           'no-restricted-globals': ['error', ...restrictedStorageGlobals],
+          'no-restricted-properties': ['error', ...restrictedStorageProperties],
         },
       },
       {
         // The one module allowed to store a Remembered PAT (ADR 0006).
-        files: ['src/session/patStorage.ts'],
+        files: ['src/session/patStorage.ts', 'src/session/patStorage.test.ts'],
         rules: {
-          'no-restricted-globals': 'off',
+          'no-restricted-globals': [
+            'error',
+            ...restrictedStorageGlobals.filter(({ name }) => name !== 'localStorage'),
+          ],
+          'no-restricted-properties': [
+            'error',
+            ...restrictedStorageProperties.filter(({ property }) => property !== 'localStorage'),
+          ],
         },
       },
     ],

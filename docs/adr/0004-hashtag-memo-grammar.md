@@ -26,8 +26,10 @@ A tag instead runs from its `#` to the next whitespace. The user drew that bound
 
 ## Amendment, 2026-10-11
 
-Tag identity is now **NFC followed by the default Unicode lowercase mapping** (`String.prototype.toLowerCase`, which does not depend on locale), not full default case folding. The owner's tags are English, and for English text the two rules give the same result. Full folding differs only in cases such as `ß` to `ss` and Greek final sigma, and it costs a generated Unicode table, a generator and cross-browser tests. As a result, `#Straße` and `#STRASSE` are now two tags. Compatibility characters such as the ligature `ﬁ` are no longer mapped either. NFKC remains rejected. Switching identity rules later regroups tags without touching any memo, because identity is derived on every read.
+Tag identity is now **NFC, then the default Unicode lowercase mapping** (`String.prototype.toLowerCase`, which does not depend on locale), **then NFC again**, not full default case folding. The final NFC matters because lowercasing can leave a composable sequence outside NFC. The owner's tags are English, and for English text the two rules give the same result. Full folding differs only in cases such as `ß` to `ss` and Greek final sigma, and it costs a generated Unicode table, a generator and cross-browser tests. As a result, `#Straße` and `#STRASSE` are now two tags. Compatibility characters such as the ligature `ﬁ` are no longer mapped either. NFKC remains rejected. Switching identity rules later regroups tags without touching any memo, because identity is derived on every read.
 
 The doubled-marker and repeated-tag warning described above is removed, along with the tidy operation that cured it. Both are deferred. Membership and totals were already correct.
 
 Nothing in the grammar restricts the characters in a tag, so a future reimbursement schema such as `#owed-alice` or `#owed/alice` needs no grammar change.
+
+A `#` that cannot start a tag now passes that on to a `#` immediately after it. Without this rule, `catalogue##kitchen` and `\##tag` would read as tags, because the second `#` follows a `#`, which is neither a letter, a digit nor a backslash.

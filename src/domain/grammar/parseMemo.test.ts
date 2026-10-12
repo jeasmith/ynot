@@ -99,9 +99,11 @@ describe('parseMemo: the # start rule', () => {
     expect(parseMemo('C:\\temp #tag').prose).toBe('C:\\temp');
   });
 
-  it('lets a # after a # start a tag when the first one cannot', () => {
-    expect(raws('a##b')).toEqual(['b']);
-    expect(raws('\\##b')).toEqual(['b']);
+  it('does not let a # after a blocked # start a tag', () => {
+    expect(raws('a##b')).toEqual([]);
+    expect(raws('catalogue##kitchen')).toEqual([]);
+    expect(raws('\\##b')).toEqual([]);
+    expect(raws('(##b')).toEqual(['b']);
   });
 });
 

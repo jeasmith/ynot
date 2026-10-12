@@ -5,17 +5,6 @@ import { anyTextArb, memoArb, tagTextArb } from '../../../test/arbitraries.ts';
 import { tagIdentity, validateTagText } from './identity.ts';
 import { parseMemo } from './parseMemo.ts';
 
-/**
- * `NFC` then `toLowerCase` can leave a string that is not itself in NFC: lowercasing the NFC form
- * of `Ϋ̀` (U+03AB U+0300) gives U+03CB U+0300, which NFC would compose to `ῢ` (U+1FE2). For such
- * texts the design's formula is not stable under case or re-normalization (see the known-gap test
- * below and the specIssue raised against Decision 4), so the properties exclude them.
- */
-const lowersToNfc = (t: string): boolean => {
-  const id = tagIdentity(t);
-  return id.normalize('NFC') === id;
-};
-
 describe('Property 3: Tag Identity', () => {
   it('is the same for t and its NFD form', () => {
     fc.assert(
@@ -36,7 +25,6 @@ describe('Property 3: Tag Identity', () => {
   it('is the same for t and t.toLowerCase()', () => {
     fc.assert(
       fc.property(anyTextArb, (t) => {
-        fc.pre(lowersToNfc(t) && lowersToNfc(t.toLowerCase()));
         expect(tagIdentity(t.toLowerCase())).toBe(tagIdentity(t));
       }),
     );
@@ -48,7 +36,6 @@ describe('Property 3: Tag Identity', () => {
         const upper = t.toUpperCase();
         // Uppercasing is lossy for ß, final sigma and the like. Only compare where it round-trips.
         fc.pre(upper.toLowerCase() === t.toLowerCase());
-        fc.pre(lowersToNfc(t) && lowersToNfc(upper));
         expect(tagIdentity(upper)).toBe(tagIdentity(t));
       }),
     );
@@ -57,7 +44,6 @@ describe('Property 3: Tag Identity', () => {
   it('is idempotent', () => {
     fc.assert(
       fc.property(anyTextArb, (t) => {
-        fc.pre(lowersToNfc(t));
         expect(tagIdentity(tagIdentity(t))).toBe(tagIdentity(t));
       }),
     );
@@ -84,10 +70,7 @@ describe('Property 3: Tag Identity', () => {
     );
   });
 
-  // Known gap in the specified formula (Decision 4 / Req 8.1), reported as a specIssue. `it.fails`
-  // keeps the suite green while pinning the desired invariant; delete the wrapper once the
-  // formula is amended (for example by normalizing to NFC again after lowercasing).
-  it.fails('known gap: identity is stable when lowercasing leaves a string outside NFC', () => {
+  it('is stable when lowercasing leaves a string outside NFC', () => {
     const upper = '\u03AB\u0300'; // Ϋ + grave
     const lower = upper.toLowerCase(); // U+03CB U+0300, canonically equal to U+1FE2
     expect(tagIdentity(lower)).toBe(tagIdentity(upper));

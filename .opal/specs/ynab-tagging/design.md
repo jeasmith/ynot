@@ -74,7 +74,7 @@ Out of scope, per the requirements:
 
 **Reasoning**: Req 1.1 and 1.7 need a purely static bundle that runs under a CSP forbidding inline and evaluated scripts. Vite's production output emits only external module scripts and extracted CSS. One toolchain and one config file cover formatting, type-aware linting (including the storage ban in Data Models), type checking and tests. The owner's other projects already use React, TypeScript, Vitest, Oxlint and pnpm.
 
-**Risks**: Vite+ is young and in beta, so the build pins its version exactly. `vp preview` must honour `preview.headers`, and the first build task verifies this. If it does not, the end-to-end tests serve `dist/` through a small static server that applies the `vercel.json` headers.
+**Risks**: Vite+ is young and in beta, so the build pins its version exactly (1.1.0). TypeScript is pinned to 5.9.3, because `openapi-typescript` needs the TypeScript 5 API; re-check when it supports TypeScript 7. `vp preview` must honour `preview.headers`, and the first build task verifies this. If it does not, the end-to-end tests serve `dist/` through a small static server that applies the `vercel.json` headers.
 
 **Alternative Options**:
 - **Plain Vite** with separate Vitest, Oxlint and Prettier configs: more mature, but more config to keep in step.
@@ -105,7 +105,7 @@ Out of scope, per the requirements:
 
 ### Decision 4: Tag Identity is NFC plus default lowercase
 
-**Outcome**: `tagIdentity(text) = text.normalize('NFC').toLowerCase()`.
+**Outcome**: `tagIdentity(text) = text.normalize('NFC').toLowerCase().normalize('NFC')`. The final NFC is needed because lowercasing can leave a composable sequence outside NFC (for example `Ϋ̀` lowercases to U+03CB U+0300, which NFC composes to U+1FE2). Without it, identity is not idempotent for such text.
 
 **Reasoning**: Req 8.1 now asks for exactly this (ADR 0004 amendment, decision 11). `String.prototype.toLowerCase` applies Unicode's default lowercase mapping and does not depend on locale. It is deterministic within a session, which is all Req 8.3 needs, because identity is never stored or sent anywhere. For the owner's English tags it agrees with full case folding.
 
@@ -331,7 +331,7 @@ export function parseMemo(memo: string | null): ParsedMemo;
 
 The parser walks the memo by code point:
 
-1. A `#` is a candidate when it sits at the start of the memo, or when the previous code point is neither `\` nor in `\p{L}` or `\p{N}`. If the previous code point is a combining mark (`\p{M}`), the test applies to the base character of its sequence, so decomposed `é#tag` is rejected exactly like precomposed `é#tag` (Req 7.1). A mark with no base character is treated as the memo start.
+1. A `#` is a candidate when it sits at the start of the memo, or when the previous code point is neither `\` nor in `\p{L}` or `\p{N}`, nor a `#` that was itself not a candidate. So `catalogue##kitchen` and `\##tag` are prose. If the previous code point is a combining mark (`\p{M}`), the test applies to the base character of its sequence, so decomposed `é#tag` is rejected exactly like precomposed `é#tag` (Req 7.1). A mark with no base character is treated as the memo start.
 2. Consecutive extra `#` markers are consumed.
 3. The token runs to the next `\p{White_Space}` or the end of the memo.
 4. Trailing `\p{Po}`, `\p{Pe}` and `\p{Pf}` are trimmed.
@@ -372,7 +372,7 @@ export interface TagEntry {
   readonly members: readonly Member[];
   readonly parentMembers: ReadonlySet<TransactionId>;     // writable
   readonly splitOnlyMembers: ReadonlySet<TransactionId>;  // read-only
-  readonly splitOccurrenceCount: number;                  // occurrences in split memos (unreachable by writes)
+  readonly splitOccurrenceCount: number;                  // every token occurrence in non-deleted split memos, for parent and split-only members alike
   readonly total: TagTotal;
 }
 
@@ -409,7 +409,7 @@ The rules this index implements:
   - A subtransaction that carries the tag twice counts once.
 - **Totals**: `net` is the sum of member contributions. `outflow` and `inflow` partition the contributing amounts by sign, and `memberCount` is the number of members.
 - **Canonical Spelling** has the greatest `transactionCount`, then the earliest `earliestDate`, then the lowest code-point order (Req 8.4–8.7).
-- **Transfer pairs**: each parent ID and each subtransaction ID is mapped to its parent transaction. Two members form a pair when a `transfer_transaction_id` on one of them, whether on the parent or on a subtransaction, resolves to the other (Req 10.5–10.6).
+- **Transfer pairs**: each parent ID and each subtransaction ID is mapped to its parent transaction. Two members form a pair when a `transfer_transaction_id` on one of them, whether on the parent or on any subtransaction (tagged or not), resolves to the other. Pairs are deduplicated, `a` is the lower transaction ID by code point, and the list is sorted by `(a, b)` (Req 10.5–10.6).
 - **Outside-account count** (Req 10.7, 16.3) is computed by the UI from `members` and the Register's current account; it is not stored in the index.
 
 ### `src/domain/tags/markers.ts`
@@ -579,7 +579,9 @@ The PAT is captured in a closure and never exposed as a property. Every request:
 - is sent with `cache: 'no-store'`, `credentials: 'omit'`, `referrerPolicy: 'no-referrer'` and `mode: 'cors'`;
 - carries an `AbortSignal` that combines a 35-second timeout, `dispose` and the caller's `opts.signal` (Req 1.4, 1.11).
 
-Responses are classified in `src/ynab/errors.ts`:
+Wire types follow YNAB's snake_case schema and are exported from `client.ts`; `Delta<T>` is `{ items: readonly T[]; serverKnowledge: number }`. Until the pinned OpenAPI document can be fetched (task 4.1), `client.ts` carries hand-written stand-ins for these types, to be replaced by aliases of the generated `components['schemas']`.
+
+Every method rejects with `YnabError`, which carries `failure: YnabFailure`; `ynabFailureOf(error)` extracts it. Responses are classified in `src/ynab/errors.ts`:
 
 ```typescript
 export type YnabFailure =
@@ -594,6 +596,8 @@ export type YnabFailure =
   | { kind: 'cancelled' };                      // aborted by dispose or the session's signal
 ```
 
+Any other non-success status (for example a 3xx or 409) is `rejected` with a generic detail, and a 200 whose body has no readable `data` envelope is `{ kind: 'server', status: 200 }`.
+
 An abort is classified by its reason. Only the client's private timeout reason becomes `timeout`. Any other abort becomes `cancelled`, and its result is discarded: it raises no `Updates paused`, starts no verification, and is never retried (Req 2.6–2.7, 18.9).
 
 ### `src/ynab/map.ts` and `src/ynab/delta.ts`
@@ -605,6 +609,7 @@ export function mergeTransactions(current: ReadonlyMap<TransactionId, Transactio
 
 - **Merge:** upserts by ID and removes transactions marked `deleted`. It returns a new map, so React snapshots stay immutable.
 - **Memo mapping:** a `""` memo maps to `null`, so every memo comparison is exact (`===`). This depends on contract check 5.
+- **Load:** `loadBudget(client, plan, opts?)` returns `LoadedBudget`: `plan { id, name, firstMonth, currencyFormat }`, `accounts`, `categories` and `transactions` as maps, and `knowledge { transactions, accounts, categories }`. It is all or nothing. Deleted categories and groups are skipped, and a plan with no `first_month` falls back to a fixed early history start.
 
 ### `src/session/patStorage.ts`
 
@@ -620,9 +625,9 @@ This is the only module allowed to touch `localStorage`, and it uses the single 
 
 ```typescript
 export type AppPhase =
-  | { phase: 'disconnected'; notice?: 'disconnected' | 'unauthorized' | 'rememberFailed' }
+  | { phase: 'disconnected'; notice?: 'disconnected' | 'unauthorized'; failure?: YnabFailure } // failure: a non-401 connect failure
   | { phase: 'connecting' }
-  | { phase: 'choosingBudget'; plans: PlanSummary[] }
+  | { phase: 'choosingBudget'; plans: PlanSummary[]; rememberFailed?: true }               // Remember was ticked but storage failed
   | { phase: 'loadingBudget'; planId: string }
   | { phase: 'loadFailed'; planId: string; failure: YnabFailure }
   | { phase: 'ready'; budget: BudgetSessionSnapshot };
@@ -651,10 +656,10 @@ export interface SessionStore {
 }
 ```
 
-React reads the store through `useSyncExternalStore`. `BudgetSessionSnapshot` holds:
+React reads the store through `useSyncExternalStore`. `rememberPat` returns nothing; the store reads the PAT back after storing it and sets `rememberFailed` when they differ. `refreshNow()` defaults to `includeAccounts: false`; the Refresh button passes `true`. Overlapping refreshes share one in-flight promise. `BudgetSessionSnapshot` holds:
 - data: transactions, accounts, categories, `serverKnowledge`, and the derived `TagIndex` and markers
 - view state: scope, filters, selection and open tag
-- `refreshHealth: 'ok' | { paused: YnabFailure }` and `lastUpdatedAt`
+- `refreshHealth: 'ok' | { paused: YnabFailure }`, `lastUpdatedAt` and `refreshing`
 - operations: the current preview, the operation, the last results and the undo slot
 
 - **Selection rules**:
@@ -801,7 +806,7 @@ Connection, the overview, the reader, browsing, and apply/remove are designed fo
 
 - **Vercel project settings**: Web Analytics, Speed Insights and the Vercel Toolbar stay off. The production domain is a dedicated subdomain, and Deployment Protection covers preview URLs (Decision 2, Req 1.5–1.6).
 - **Build settings** (in `vite.config.ts`): `build.modulePreload.polyfill = false` and `build.assetsInlineLimit = 0`, so the build emits no `data:` URIs. Fonts are system fonts, so none are loaded.
-- **Preview server**: `vite.config.ts` reads the headers from `vercel.json` into `preview.headers`, so end-to-end tests run under the production CSP.
+- **Preview server**: `vite.config.ts` forwards `vercel.json`'s catch-all `/(.*)` headers (the CSP and every security header) into `preview.headers` through `scripts/vercelHeaders.ts`. `preview.headers` is one flat record, so the path-specific Cache-Control rules are not reproduced in preview; they are checked with `curl -I` against production at release (Req 21.6). This means so end-to-end tests run under the production CSP.
 - **CSP policy**: the policy is never weakened to make a build work (Req 1.8). The boundary end-to-end spec fails on any `securitypolicyviolation`, and at release `curl -I` against production confirms the deployed headers (Req 21.6).
 
 ## Data Models
@@ -877,7 +882,9 @@ None of these types is serialized. Only `patStorage.ts` writes to browser storag
 
 Oxlint (configured in `vite.config.ts` and run by `vp check`) enforces this:
 - `no-console` in `src/`;
-- `no-restricted-globals` for `localStorage`, `sessionStorage`, `indexedDB` and `caches`, with an override for `src/session/patStorage.ts` alone (Req 1.3, 22.3).
+- `no-restricted-globals` for `localStorage`, `sessionStorage`, `indexedDB` and `caches`;
+- `no-restricted-properties` for the same names reached through `window`, `globalThis` or `self`;
+- an override for `src/session/patStorage.ts` and its test that lifts both rules for `localStorage` only (Req 1.3, 22.3).
 
 ### YNAB write payload
 
@@ -903,7 +910,7 @@ Properties marked **(fast-check)** are property-based tests. The others are chec
 
 ### Property 3: Identity is invariant under canonical equivalence and case (fast-check)
 
-*For any* tag text `t`, `tagIdentity` SHALL return the same identity for `t`, `t.normalize('NFD')`, `t.toUpperCase()` (when its NFC lowercase equals `t`'s) and `t.toLowerCase()`. It SHALL differ for NFKC-equivalent but canonically distinct texts such as `ＴＡＸ` and `TAX`. `Straße` and `STRASSE` SHALL differ.
+*For any* tag text `t`, `tagIdentity` SHALL be idempotent and SHALL return the same identity for `t`, `t.normalize('NFD')`, `t.toUpperCase()` (when its NFC lowercase equals `t`'s) and `t.toLowerCase()`. It SHALL differ for NFKC-equivalent but canonically distinct texts such as `ＴＡＸ` and `TAX`. `Straße` and `STRASSE` SHALL differ.
 
 **Validates: Requirements 8.1, 8.2, 8.3**
 
@@ -1201,7 +1208,8 @@ If a check fails, it goes through the change protocol before the dependent code 
 
 ### Checks and CI
 
-- `vp check`: formatting, linting (including the storage and console bans) and type checks.
+- `vp check`: formatting, linting (including the storage and console bans) and type checks. `vite.config.ts` excludes non-code paths (`.opal`, `docs`, agent folders, `*.md`, `openapi/`, the generated types) from formatting and linting, so `vp check --fix` never rewrites specs or ADRs.
+- CI (`.github/workflows/ci.yml`) uses `voidzero-dev/setup-vp@v1.21.1` on Node 24, then `vp install --frozen-lockfile`, `vp check`, `vp test` and `vp build`.
 - `vp test`: unit, property and component tests.
 - `vp build`.
 - `vp run e2e`: builds, starts `vp preview`, and runs Playwright in both projects.
