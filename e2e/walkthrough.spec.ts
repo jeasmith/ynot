@@ -233,6 +233,10 @@ test.describe('overview and reader', () => {
         name: 'Near-duplicate of #home_repair',
       }),
     ).toBeVisible();
+    // A marker wraps below the name rather than squeezing it into one letter per line.
+    const name = rail.getByText('#home-repair', { exact: true });
+    const box = await name.boundingBox();
+    expect(box?.height ?? Infinity).toBeLessThan(32);
     await rail.getByRole('option', { name: /#owed-bob/ }).click();
     await expect(page.getByRole('heading', { level: 2, name: '#owed-bob' })).toBeVisible();
     if (isPhone(page))
