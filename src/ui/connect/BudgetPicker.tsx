@@ -27,7 +27,11 @@ export function BudgetPicker({ state, onChoose, onRetry, onDisconnect }: Props) 
   return (
     <main className={styles.page}>
       <h1 ref={titleRef} tabIndex={-1} className={styles.title}>
-        {state.status === 'choosing' ? 'Choose a budget' : 'Loading budget'}
+        {state.status === 'choosing'
+          ? 'Choose a budget'
+          : state.status === 'loading'
+            ? 'Loading budget'
+            : 'Budget not loaded'}
       </h1>
 
       {state.status === 'loading' && (

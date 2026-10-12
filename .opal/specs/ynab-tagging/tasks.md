@@ -55,7 +55,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - _Requirements: 3.3, 3.5_
 
   - [x] 3.2 Implement Tag Identity and tag text validation
-    - Add `src/domain/grammar/identity.ts`: `tagIdentity` as `normalize('NFC').toLowerCase()`, and `validateTagText` with every rejection reason
+    - Add `src/domain/grammar/identity.ts`: `tagIdentity` as `normalize('NFC').toLowerCase().normalize('NFC')`, and `validateTagText` with every rejection reason
     - Unit tests:
       - case variants and NFC/NFD forms
       - `Straße`/`STRASSE`, full-width/ASCII and `ﬁ`/`fi` all stay distinct

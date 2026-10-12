@@ -94,18 +94,25 @@
   list-style: none;
 }
 
+/* Rows are virtualised: the list reserves the full height and each row is placed by offset. */
 .members {
+  position: relative;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .member {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  box-sizing: border-box;
   padding: 0.625rem 0;
   border-top: 1px solid var(--color-border);
 }
 
-.member:first-child {
+.member[aria-posinset='1'] {
   border-top: 0;
 }
 

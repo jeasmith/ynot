@@ -96,5 +96,6 @@ describe('validateTagText', () => {
 
   it('rejects a second leading marker', () => {
     expect(validateTagText('##Household')).toEqual({ ok: false, reason: 'marker' });
+    expect(validateTagText('## x')).toEqual({ ok: false, reason: 'marker' });
   });
 });

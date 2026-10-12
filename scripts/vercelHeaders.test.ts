@@ -53,7 +53,7 @@ describe('vercel.json deployment headers (Req 1.7, 1.8, 1.9)', () => {
     );
   });
 
-  it('is fail-closed: default-src none and no unsafe sources', () => {
+  it('is fail-closed: default-src none, no unsafe sources, and no wildcard sources at all', () => {
     expect(directives.get('default-src')).toEqual(["'none'"]);
     expect(csp).not.toMatch(/unsafe-inline|unsafe-eval|data:|blob:|\*/);
   });

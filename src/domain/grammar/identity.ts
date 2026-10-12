@@ -36,8 +36,8 @@ export function validateTagText(
   if (spelling === '') return { ok: false, reason: 'empty' };
   // A second leading '#' would be read back as an extra marker, not as part of the tag text.
   // Checked before whitespace so '##' and '## x' are both reported as a marker problem.
-  if (HAS_WHITE_SPACE.test(spelling)) return { ok: false, reason: 'whitespace' };
   if (spelling.startsWith('#')) return { ok: false, reason: 'marker' };
+  if (HAS_WHITE_SPACE.test(spelling)) return { ok: false, reason: 'whitespace' };
   // Trimming precedes the digit test, so '3.' is reported as punctuation and never as a number.
   if (ENDS_WITH_TRIMMABLE_PUNCTUATION.test(spelling)) {
     return { ok: false, reason: 'trailingPunctuation' };

@@ -585,7 +585,7 @@ The PAT is captured in a closure and never exposed as a property. Every request:
 - is sent with `cache: 'no-store'`, `credentials: 'omit'`, `referrerPolicy: 'no-referrer'` and `mode: 'cors'`;
 - carries an `AbortSignal` that combines a 35-second timeout, `dispose` and the caller's `opts.signal` (Req 1.4, 1.11).
 
-Wire types follow YNAB's snake_case schema and are exported from `client.ts`; `Delta<T>` is `{ items: readonly T[]; serverKnowledge: number }`. Until the pinned OpenAPI document can be fetched (task 4.1), `client.ts` carries hand-written stand-ins for these types, to be replaced by aliases of the generated `components['schemas']`.
+Wire types follow YNAB's snake_case schema and are exported from `client.ts` as aliases of the generated `components['schemas']`; `Delta<T>` is `{ items: readonly T[]; serverKnowledge: number }`.
 
 Every method rejects with `YnabError`, which carries `failure: YnabFailure`; `ynabFailureOf(error)` extracts it. Responses are classified in `src/ynab/errors.ts`:
 
@@ -662,7 +662,7 @@ export interface SessionStore {
 }
 ```
 
-React reads the store through `useSyncExternalStore`. `rememberPat` returns nothing; the store reads the PAT back after storing it and sets `rememberFailed` when they differ. `refreshNow()` defaults to `includeAccounts: false`; the Refresh button passes `true`. Overlapping refreshes share one in-flight promise. `BudgetSessionSnapshot` holds:
+React reads the store through `useSyncExternalStore`. `rememberPat` returns nothing and never throws, because it catches storage errors; the store reads the PAT back after storing it and sets `rememberFailed` when they differ. `refreshNow()` defaults to `includeAccounts: false`; the Refresh button passes `true`. Overlapping refreshes share one in-flight promise. `BudgetSessionSnapshot` holds:
 - data: transactions, accounts, categories, `serverKnowledge`, and the derived `TagIndex` and markers
 - view state: scope, filters, selection and open tag
 - `refreshHealth: 'ok' | { paused: YnabFailure }`, `lastUpdatedAt` and `refreshing`
@@ -812,7 +812,7 @@ Connection, the overview, the reader, browsing, and apply/remove are designed fo
 
 - **Vercel project settings**: Web Analytics, Speed Insights and the Vercel Toolbar stay off. The production domain is a dedicated subdomain, and Deployment Protection covers preview URLs (Decision 2, Req 1.5–1.6).
 - **Build settings** (in `vite.config.ts`): `build.modulePreload.polyfill = false` and `build.assetsInlineLimit = 0`, so the build emits no `data:` URIs. Fonts are system fonts, so none are loaded.
-- **Preview server**: `vite.config.ts` forwards `vercel.json`'s catch-all `/(.*)` headers (the CSP and every security header) into `preview.headers` through `scripts/vercelHeaders.ts`. `preview.headers` is one flat record, so the path-specific Cache-Control rules are not reproduced in preview; they are checked with `curl -I` against production at release (Req 21.6). This means so end-to-end tests run under the production CSP.
+- **Preview server**: `vite.config.ts` forwards `vercel.json`'s catch-all `/(.*)` headers (the CSP and every security header) into `preview.headers` through `scripts/vercelHeaders.ts`. `preview.headers` is one flat record, so the path-specific Cache-Control rules are not reproduced in preview; they are checked with `curl -I` against production at release (Req 21.6). This means that end-to-end tests run under the production CSP.
 - **CSP policy**: the policy is never weakened to make a build work (Req 1.8). The boundary end-to-end spec fails on any `securitypolicyviolation`, and at release `curl -I` against production confirms the deployed headers (Req 21.6).
 
 ## Data Models

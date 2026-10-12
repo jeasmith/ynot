@@ -297,3 +297,25 @@ describe('Tag drawer and focus', () => {
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: '#aaa' }));
   });
 });
+
+describe('Tag reader: a tag with thousands of members', () => {
+  const many = Array.from({ length: 3000 }, (_, i) =>
+    tx(`m${i}`, -1_000, '#household', { date: '2026-01-01' }),
+  );
+  const budget = makeBudget(many, { openTag: identityOf('household') });
+
+  it('mounts only the rows near the viewport, each saying its place in the list', () => {
+    // jsdom has no layout: give every element a row's height so the virtualiser can measure.
+    const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(64);
+    show(budget);
+    const members = screen.getByRole('list', { name: 'Member transactions' });
+    const rows = within(members).getAllByRole('listitem');
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.length).toBeLessThan(100);
+    expect(rows[0]?.getAttribute('aria-posinset')).toBe('1');
+    expect(rows[0]?.getAttribute('aria-setsize')).toBe('3000');
+    const composition = screen.getByRole('region', { name: 'Total composition' });
+    expect(stat(composition, 'Transactions')).toBe('3000');
+    height.mockRestore();
+  });
+});

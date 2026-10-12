@@ -596,7 +596,8 @@ export function createFakeYnab(options: FakeYnabOptions = {}): FakeYnab {
     const rec = record(req.method(), req.url(), req.headers(), parseBody(req.postData()));
     const outcome = run(rec);
     if (outcome.kind === 'drop') return route.abort('connectionfailed');
-    if (outcome.kind === 'hang') return route.abort('timedout');
+    // Never answer, so the client's own timeout fires, as with `fetchImpl`.
+    if (outcome.kind === 'hang') return new Promise<void>(() => {});
     await route.fulfill({
       status: outcome.status,
       contentType: 'application/json',

@@ -50,6 +50,7 @@ describe('BudgetPicker', () => {
 
   it('shows a load failure with Retry and Disconnect', () => {
     const h = setup({ status: 'failed', failure: { kind: 'server', status: 503 } });
+    expect(screen.getByRole('heading', { level: 1, name: 'Budget not loaded' })).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toContain('Could not load this budget');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(h.onRetry).toHaveBeenCalledOnce();

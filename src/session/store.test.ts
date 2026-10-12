@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import { createFakeYnab, type FakePlanInit } from '../../test/fakeYnab.ts';
 import type { TagIdentity } from '../domain/grammar/identity.ts';
 import type { TransactionId } from '../domain/model.ts';
+import { parseMemo, type ParsedMemo } from '../domain/grammar/parseMemo.ts';
 import type { TagIndex } from '../domain/tags/tagIndex.ts';
 import { createYnabClient, type YnabClient } from '../ynab/client.ts';
 import { createSessionStore, type AppPhase, type PatStorage } from './store.ts';
@@ -47,6 +48,8 @@ interface SetupOptions {
   writable?: boolean;
   fetchImpl?: (fake: typeof fetch) => typeof fetch;
   gated?: boolean;
+  /** Use the real Tag Index with this memo parser instead of the stubbed index. */
+  parse?: (memo: string | null) => ParsedMemo;
 }
 
 /** A client that can hold read calls and ignores their signal, to prove the stale-result guard. */
@@ -104,7 +107,7 @@ function setup(opts: SetupOptions = {}) {
   const store = createSessionStore({
     createClient,
     patStorage: pat.storage,
-    buildTagIndex: build as never,
+    ...(opts.parse === undefined ? { buildTagIndex: build as never } : { parse: opts.parse }),
     deriveMarkers: markers as never,
     now: () => clock++,
   });
@@ -335,6 +338,28 @@ describe('refreshNow', () => {
     expect(after.lastUpdatedAt).toBeGreaterThan(before.lastUpdatedAt ?? 0);
     expect(after.knowledge.transactions).toBe(t.fake.serverKnowledge('p1'));
     expect(after.refreshHealth).toBe('ok');
+  });
+
+  it('parses each distinct memo text once per Budget Session (design Decision 11)', async () => {
+    const parse = vi.fn(parseMemo);
+    const t = setup({ parse });
+    await t.loaded();
+    const parsedAfterLoad = parse.mock.calls.filter(([m]) => m !== null).map(([m]) => m);
+    expect(parsedAfterLoad).toEqual(['shop #food']);
+
+    t.fake.addTransaction('p1', { id: 't3', accountId: 'a1', memo: '#new' });
+    await t.store.refreshNow();
+    const parsedOnRefresh = parse.mock.calls
+      .slice(parsedAfterLoad.length + 1) // skip the load's calls, including the null memo
+      .filter(([m]) => m !== null)
+      .map(([m]) => m);
+    expect(parsedOnRefresh).toEqual(['#new']);
+    expect(t.ready().domain.index.byIdentity.size).toBe(2);
+
+    // A new Budget Session starts with an empty cache.
+    await t.store.switchBudget();
+    await t.store.chooseBudget('p1');
+    expect(parse.mock.calls.filter(([m]) => m === 'shop #food')).toHaveLength(2);
   });
 
   it('keeps the same domain objects when nothing changed, but still stamps the time', async () => {

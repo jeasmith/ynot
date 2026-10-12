@@ -1,4 +1,4 @@
-import { parseMemo } from '../domain/grammar/parseMemo.ts';
+import { parseMemo, type ParsedMemo } from '../domain/grammar/parseMemo.ts';
 import type { TagIdentity } from '../domain/grammar/identity.ts';
 import type { DomainState } from '../domain/model.ts';
 import { buildTagIndex } from '../domain/tags/tagIndex.ts';
@@ -130,6 +130,18 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   let connection: Connection | null = null;
   let session: BudgetSession | null = null;
   let knownPlans: PlanSummary[] = [];
+  // Memo parses keyed by raw memo text (design Decision 11), so a full index rebuild only parses
+  // memo text it has not seen. Cleared with the Budget Session, so no memo outlives it.
+  const parses = new Map<string, ParsedMemo>();
+  const parseCached = (memo: string | null): ParsedMemo => {
+    if (memo === null) return parse(memo);
+    let parsed = parses.get(memo);
+    if (parsed === undefined) {
+      parsed = parse(memo);
+      parses.set(memo, parsed);
+    }
+    return parsed;
+  };
   const listeners = new Set<() => void>();
 
   function setState(next: AppPhase): void {
@@ -148,6 +160,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
       session.controller.abort();
       session = null;
     }
+    parses.clear();
   }
 
   function endConnection(): void {
@@ -160,7 +173,7 @@ export function createSessionStore(options: SessionStoreOptions = {}): SessionSt
   }
 
   function deriveFrom(domain: Omit<DomainState, 'index'>) {
-    const index = build(domain.transactions, parse);
+    const index = build(domain.transactions, parseCached);
     return { domain: { ...domain, index }, markers: derive(index) };
   }
 
