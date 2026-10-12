@@ -15,7 +15,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
 
 ## Tasks
 
-- [ ] 1. Scaffold the toolchain, headers and CI
+- [x] 1. Scaffold the toolchain, headers and CI
   - [x] 1.1 Create the Vite+ React project
     - Add `package.json`:
       - pnpm pinned through `packageManager`, Node 24 in `engines`, `vite-plus` pinned to an exact version
@@ -49,7 +49,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
 
 ### Slice 1: read-only tag reader
 
-- [ ] 3. Domain core for reading
+- [x] 3. Domain core for reading
   - [x] 3.1 Add the domain model
     - Add `src/domain/model.ts` with the branded IDs, `Transaction`, `SubTransaction`, `Account`, `Category` and `DomainState` from the design
     - _Requirements: 3.3, 3.5_
