@@ -33,3 +33,19 @@ For all stages after `/opal:new` (`design`, `preflight`, `tasks`, `build`, `play
 
 Do not implement code while authoring requirements, design, or tasks unless the user explicitly asks for implementation.
 <!-- OPALSPEC-INSTRUCTIONS-END -->
+
+## Review guidelines
+
+These apply to automated PR reviewers (Codex, `@claude`) and to local `/code-review` runs. CI already runs `vp check`, `vp test`, `vp build` and the Playwright suite, so don't report lint, formatting, type errors or failing tests.
+
+Treat these as P0/P1 (blocking):
+
+- **Money maths.** Amounts are YNAB milliunits. Flag float arithmetic, rounding or sign errors, and split-line amounts counted wrongly (ADR 0005).
+- **Memo safety.** Ynot never damages memo prose: a tag that doesn't fit is skipped and reported, never truncated. A YNAB write must resend `approved` (ADR 0007).
+- **Credentials.** The PAT goes only to the YNAB API. It is stored in `localStorage` only when the user opts in, and Disconnect or a 401 clears it (ADR 0006). Flag anything that logs it, sends it elsewhere, loosens the CSP, or loads a third-party script.
+- **Tag grammar.** Tag identity is NFC plus lowercase (ADR 0004). Flag changes that break it.
+- **Rate limit.** YNAB allows 200 requests per hour per token. Flag new request loops or retries that could exhaust it.
+
+Everything else is a nit. Report at most five nits per review, and after the first review of a PR report only P0/P1 findings.
+
+Skip entirely: `pnpm-lock.yaml`, `*.generated.ts`, `openapi/`, and wording in `.opal/` specs and `docs/` unless the prose contradicts the code. Don't ask for docstrings.
