@@ -16,7 +16,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
 ## Tasks
 
 - [ ] 1. Scaffold the toolchain, headers and CI
-  - [ ] 1.1 Create the Vite+ React project
+  - [x] 1.1 Create the Vite+ React project
     - Add `package.json`:
       - pnpm pinned through `packageManager`, Node 24 in `engines`, `vite-plus` pinned to an exact version
       - React 19, `react-aria-components`, `@tanstack/react-virtual`
@@ -31,18 +31,18 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Use system fonts; ship no font files
     - _Requirements: 1.1, 1.3, 1.6, 1.9, 22.3, 22.4_
 
-  - [ ] 1.2 Add deployment headers and the preview header check
+  - [x] 1.2 Add deployment headers and the preview header check
     - Add `vercel.json` exactly as in the design
     - In `vite.config.ts`, read its headers into `preview.headers`
     - Confirm that `vp preview` serves the CSP on `/` and on an asset. If it does not, add a small static server that applies the `vercel.json` headers for Playwright, and note it in the design through the change protocol
     - _Requirements: 1.5, 1.7, 1.8, 1.9_
 
-  - [ ] 1.3 Add CI
+  - [x] 1.3 Add CI
     - Add `.github/workflows/ci.yml`: `pnpm install --frozen-lockfile`, `vp check`, `vp test`, `vp build`
     - The end-to-end job is added in task 6.1
     - _Requirements: 1.7, 21.3_
 
-- [ ] 2. Checkpoint - Verify the scaffold
+- [x] 2. Checkpoint - Verify the scaffold
   - Run `vp check`, `vp test` and `vp build`
   - Run `vp preview` and confirm the CSP header in the response
   - _Requirements: 1.1, 1.7, 1.9_
@@ -50,7 +50,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
 ### Slice 1: read-only tag reader
 
 - [ ] 3. Domain core for reading
-  - [ ] 3.1 Add the domain model
+  - [x] 3.1 Add the domain model
     - Add `src/domain/model.ts` with the branded IDs, `Transaction`, `SubTransaction`, `Account`, `Category` and `DomainState` from the design
     - _Requirements: 3.3, 3.5_
 
