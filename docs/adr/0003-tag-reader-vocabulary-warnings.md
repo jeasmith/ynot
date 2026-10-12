@@ -9,11 +9,27 @@ The console is not adopted, but its insight is. The vocabulary's real failure is
 ## Consequences
 
 - The tag rail is exclusive navigation, like the account rail. One tag is open at a time, and its header carries the management strip: rename globally, merge into another tag, delete.
-- Vocabulary warnings appear in two places at once — a marker on each affected rail entry, and a collapsible "needs attention" group pinned to the top of the rail. Scanning the rail surfaces a problem in passing; the pinned group turns the whole set of them into a worklist.
-- Warnings are ranked, not flat. Two spellings of one tag, whether a case collision or a near-duplicate, is the first-class signal, because that is what silently inflates the vocabulary. A tag used only once sits in a separate lower-priority section beneath them: it is a weak hint at a typo and must never crowd out a real duplicate.
+- Vocabulary warnings appear in two places at once — a marker on each affected rail entry, and a collapsible "needs attention" group pinned to the top of the rail. Scanning the rail surfaces a problem in passing; the pinned group turns the whole set of them into a worklist. _(Superseded 2026-10-11; see the amendment below.)_
+- Warnings are ranked, not flat. Two spellings of one tag, whether a case collision or a near-duplicate, is the first-class signal, because that is what silently inflates the vocabulary. A tag used only once sits in a separate lower-priority section beneath them: it is a weak hint at a typo and must never crowd out a real duplicate. _(Amended 2026-10-11: the case-collision warning is removed and only near-duplicate and single-use markers remain; see below.)_
 - A warning is advisory. It names the conflict and offers the fix; nothing is renamed, merged, or deleted without an explicit action and its impact preview.
 - Management is confirmed one operation at a time. The console's staged change plan — several operations applied under a single combined preview — is not adopted for the first version.
 - A rename onto a tag that already exists becomes a merge, and says so. Refusing it and forcing an explicit merge is a defensible alternative, deferred until the first version is in use.
 - Removing a hashtag from a memo closes the gap it leaves and changes nothing else. The prototype's first attempt at tidying also ate the space before a human `·` separator, turning "Weekly shop · Clubcard voucher used" into "Weekly shop· Clubcard voucher used". Silently rewriting a user's own prose is the worst outcome this feature can produce, so the rewrite stays deliberately conservative and every preview shows the literal before and after of each memo.
 - Tag membership, Tag Totals, warnings, and impact previews are all computed over the whole budget rather than the active account, because the vocabulary is budget-wide (ADR 0002). Every impact preview continues to count how many affected transactions sit outside the active account.
 - A warning is a claim about the whole vocabulary, so it is only as honest as the history behind it. Since API v1.85.0 a transaction listing that omits `since_date` returns only the last year, which would let the rail call a tag single-use when it has forty older uses, and let an impact preview undercount the memos a rename is about to rewrite. The tag reader must load the complete history first — an explicit `since_date` old enough to cover the plan, derived from its `first_month` — before it computes a vocabulary, ranks a warning, or previews an impact.
+
+## Amendment, 2026-10-11
+
+The ledger view returns alongside the reader. Its strength, seeing every tag at once, answers the owner's main question: what each group adds up to. A **Tag Overview** table now lists every tag with net, outflow, inflow and count, sortable by each, and opens a tag in the reader when chosen. The rail and reader are unchanged.
+
+Warnings are trimmed to what catches real drift:
+
+- **Kept:** the near-duplicate marker, which names the pair, and a lower-priority single-use marker. Both show on tags in the rail and in the overview.
+- **Removed:**
+  - the case-collision ("spelling consistency") warning, because identity already makes `#Household` and `#household` one tag, so the difference is cosmetic
+  - the pinned "needs attention" group
+  - the cleanup warning for `##` and repeated tags
+
+Acting on a near-duplicate marker opens the ordinary rename with the other spelling offered as the target. The user picks the direction there, and rename-onto-existing remains a merge.
+
+Prevention now comes first. Applying a tag offers existing tags as the user types, so most new variants are never written. The spelling-consistency chooser, tidy and warning dismissal are deferred.
