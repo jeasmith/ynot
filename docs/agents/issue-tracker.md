@@ -23,7 +23,7 @@ Issues and PRDs for this repo live as GitHub issues. Use the GitHub REST API thr
 When set to `yes`, PRs run through the same labels and states as issues, using the `gh pr` equivalents:
 
 - **Read a PR**: `gh api repos/{owner}/{repo}/pulls/<number>` and its `/issues/<number>/comments`; `gh pr diff <number>` for the diff (it uses REST and works everywhere).
-- **List external PRs for triage**: `gh api 'repos/{owner}/{repo}/pulls?state=open&per_page=100' --paginate --jq '.[] | {number, title, body, labels: [.labels[].name], author: .user.login, author_association, created_at}'` then keep only `author_association` of `CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, or `NONE` (drop `OWNER`/`MEMBER`/`COLLABORATOR`).
+- **List external PRs for triage**: `gh api 'repos/{owner}/{repo}/pulls?state=open&per_page=100' --paginate --jq '.[] | {number, title, body, labels: [.labels[].name], author: .user.login, author_association, created_at}'` then keep only `author_association` of `CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, `FIRST_TIMER`, or `NONE` (drop `OWNER`/`MEMBER`/`COLLABORATOR`).
 - **Comment / label / close**: the issue endpoints above work on PR numbers too; close a PR with `gh api -X PATCH repos/{owner}/{repo}/pulls/<number> -f state=closed`.
 
 GitHub shares one number space across issues and PRs, so a bare `#42` may be either — resolve with `gh api repos/{owner}/{repo}/issues/42 --jq '.pull_request != null'`.
