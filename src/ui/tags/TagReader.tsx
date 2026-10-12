@@ -1,5 +1,5 @@
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from 'react-aria-components';
 import type { TagIdentity } from '../../domain/grammar/identity.ts';
 import type { Transaction, TransactionId } from '../../domain/model.ts';
@@ -141,12 +141,14 @@ function MemberList({
     const list = listRef.current;
     if (list !== null) setScrollMargin(list.getBoundingClientRect().top + window.scrollY);
   });
+  // A stable key function keeps the virtualizer's measurement cache valid across scroll renders.
+  const getItemKey = useCallback((i: number) => members[i]?.transactionId ?? i, [members]);
   const virtualizer = useWindowVirtualizer({
     count: members.length,
     estimateSize: () => 64,
     overscan: 8,
     scrollMargin,
-    getItemKey: (i) => members[i]?.transactionId ?? i,
+    getItemKey,
   });
 
   return (

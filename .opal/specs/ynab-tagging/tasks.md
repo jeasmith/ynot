@@ -169,10 +169,10 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Add `AppShell` with:
       - Switch budget and Refresh
       - `Last updated` and `Updates paused` with Retry
-      - Disconnect confirmation stating the PAT is not revoked and a remembered token is forgotten, linking to YNAB Developer Settings, and warning when a Write Operation has requests already sent
+      - Disconnect confirmation stating the PAT is not revoked and a remembered token is forgotten, and linking to YNAB Developer Settings
       - a Tags tab (the Register tab arrives in slice 2)
     - Mount `refreshOnReturn`
-    - _Requirements: 2.5, 2.6, 3.9, 4.1, 4.7, 4.10, 20.3, 20.5_
+    - _Requirements: 2.5, 3.9, 4.1, 4.7, 4.10, 20.3, 20.5_
 
   - [x] 5.2 Add the connect screen and budget picker
     - `ConnectScreen`:
@@ -195,7 +195,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
       - the near-duplicate marker naming the other tag
     - Empty-vocabulary state in both views
     - Component tests: an overview sort, the restaurant example rendering per-line Contributions, and markers with accessible names
-    - _Requirements: 10.2, 10.5, 10.6, 10.7, 11.1, 11.2, 11.4, 11.5, 11.6, 11.7, 14.2, 14.3, 20.2_
+    - _Requirements: 10.2, 10.5, 10.6, 11.1, 11.2, 11.4, 11.5, 11.6, 11.7, 14.2, 14.3, 20.2_
 
 - [x] 6. Slice 1 end-to-end evidence
   - [x] 6.1 Configure Playwright and the boundary spec
