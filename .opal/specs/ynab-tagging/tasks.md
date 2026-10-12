@@ -163,8 +163,8 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
       - `refreshOnReturn` fires on visible, but not mid-refresh; the disposer removes the listener
     - _Requirements: 2.1, 2.2, 2.5, 2.8, 2.9, 2.10, 3.1, 3.6, 3.7, 3.8, 3.9, 4.1, 4.3, 4.7, 4.10_
 
-- [ ] 5. UI for reading
-  - [ ] 5.1 Connect the store to React and add the app shell
+- [x] 5. UI for reading
+  - [x] 5.1 Connect the store to React and add the app shell
     - `useSyncExternalStore` binding and an error boundary showing "Something went wrong" with Disconnect
     - Add `AppShell` with:
       - Switch budget and Refresh
@@ -174,7 +174,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Mount `refreshOnReturn`
     - _Requirements: 2.5, 2.6, 3.9, 4.1, 4.7, 4.10, 20.3, 20.5_
 
-  - [ ] 5.2 Add the connect screen and budget picker
+  - [x] 5.2 Add the connect screen and budget picker
     - `ConnectScreen`:
       - PAT field and a `Remember on this device` checkbox, off by default
       - a privacy explanation, including that a Remembered PAT grants full access until revoked
@@ -182,7 +182,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - `BudgetPicker`: plan list, empty state, loading, and load failure with Retry and Disconnect
     - _Requirements: 1.2, 1.10, 2.9, 2.10, 3.1, 3.6, 3.7, 3.8_
 
-  - [ ] 5.3 Add the Tag Overview, tag rail and Tag reader
+  - [x] 5.3 Add the Tag Overview, tag rail and Tag reader
     - `TagOverview`:
       - a React Aria Table of every tag with net, outflow, inflow, count and marker icons with accessible names
       - sortable by each column and labelled `all accounts · all time`
@@ -197,8 +197,8 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Component tests: an overview sort, the restaurant example rendering per-line Contributions, and markers with accessible names
     - _Requirements: 10.2, 10.5, 10.6, 10.7, 11.1, 11.2, 11.4, 11.5, 11.6, 11.7, 14.2, 14.3, 20.2_
 
-- [ ] 6. Slice 1 end-to-end evidence
-  - [ ] 6.1 Configure Playwright and the boundary spec
+- [x] 6. Slice 1 end-to-end evidence
+  - [x] 6.1 Configure Playwright and the boundary spec
     - Playwright config:
       - Desktop Chromium and Pixel 7 projects against `vp preview`, with the fake YNAB as a `page.route` handler
       - a `securitypolicyviolation` listener that fails any test
@@ -209,7 +209,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Add the end-to-end job to CI
     - _Requirements: 1.4, 1.7, 1.11, 2.2, 2.9, 20.2, 21.3, 21.6_
 
-  - [ ] 6.2 Add the slice 1 walkthrough spec
+  - [x] 6.2 Add the slice 1 walkthrough spec
     - `e2e/walkthrough.spec.ts`:
       - connect with and without remember, and budget choice
       - the overview, and the reader showing split-line Contributions and a transfer pair

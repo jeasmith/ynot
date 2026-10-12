@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ynot</title>
+    <!-- React Aria injects an inline <style id="react-aria-pressable-style"> unless an element with
+         that id exists. The production CSP refuses inline styles, so base.css carries the rule and
+         this marker stops the injection. -->
+    <meta id="react-aria-pressable-style" name="react-aria-pressable-style" content="base.css" />
   </head>
   <body>
     <div id="root"></div>
