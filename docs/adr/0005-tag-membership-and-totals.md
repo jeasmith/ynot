@@ -23,3 +23,17 @@ The total is the plain net sum, with no class of transaction excluded and no fil
 - Unapproved transactions are ordinary members, taggable and counted. Tagging is organization, not approval, and the register's status facet already serves anyone who wants to separate them. A write must carry the transaction's current `approved` value or YNAB defaults it to unapproved; the research note records the constraint and the safe-write decision owns the mechanics.
 - Every Tag Total is budget-wide and all-time. No register filter — account, year, search, category, or status — narrows it, and the first version offers no date control that would. A date-ranged total is reporting, which the map places out of scope, and it would multiply the interpretations of a single displayed number.
 - No count or total appears without its scope stated beside it. The register's tag facet counts only the active account, so clicking a facet yields exactly as many rows as it advertised; the tag reader reads "all accounts · all time" and says how many members lie outside the active account. This is the form [ADR 0002](0002-active-account-register-scope.md) requires the account-scope tension to take: two numbers that differ, each labelled, rather than one number that is wrong on one of the two screens.
+
+## Amendment, 2026-10-11
+
+Membership is unchanged: it is a set, it is read from parent and split memos, and split-borne membership is read-only. **The amount a split-borne membership contributes changes.** The consequence above beginning "A transaction containing splits contributes its full signed parent amount" is replaced by the following:
+
+- A tag in the **parent memo** contributes the full signed parent amount once, whatever the split memos say.
+- A tag found **only in split memos** contributes the sum of the signed amounts of the non-deleted split lines whose memos carry it. Each member transaction still counts once.
+- The outflow and inflow subtotals sum the negative and positive contributing amounts. A contributing amount is either a parent amount or one tagged split line.
+
+The original rule made a split line tagged `#owed-alice` on a £120 bill count −£120, so Alice's tag could never net to zero after she repaid her £25. The tag was written on the line because it describes the line.
+
+Transfer pairing is still named in the composition and never promised to cancel. Under this rule, a tagged split line that is itself a transfer offsets its linked side exactly, while a parent-memo tag on a split with a transfer line still nets to the remainder. Read-only marking, the remove/rename/delete limitations and deleted-subtransaction handling are all unchanged.
+
+The scope label changes too. "Outside the active account" is stated only while the register is scoped to one account, because ADR 0002 now also allows All accounts.
