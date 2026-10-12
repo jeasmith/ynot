@@ -113,7 +113,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Commit `openapi/ynab-1.86.0.yaml`, generate `src/ynab/openapi.generated.ts` with `openapi-typescript`, and add a `vp run` script that regenerates it
     - _Requirements: 1.1_
 
-  - [ ] 4.2 Implement error classification and the client
+  - [x] 4.2 Implement error classification and the client
     - Add `src/ynab/errors.ts` with `YnabFailure`, where only the client's private timeout reason maps to `timeout` and every other abort maps to `cancelled`
     - Add `src/ynab/client.ts` per the design:
       - origin assertion before the `Authorization` header
@@ -123,20 +123,20 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Unit tests with a recording `fetchImpl` cover status classification, abort reasons and fetch init. Property 22, the network boundary, is covered by example tests
     - _Requirements: 1.4, 1.11, 2.7, 18.9_
 
-  - [ ] 4.3 Implement mapping, delta merge and the initial load
+  - [x] 4.3 Implement mapping, delta merge and the initial load
     - Add `src/ynab/map.ts` (`''` → `null` memos; deleted subtransactions dropped), `src/ynab/delta.ts` (`mergeTransactions`) and `src/ynab/load.ts`
     - The load requests accounts, categories and `transactions?since_date=<first_month>` in parallel
     - Contract checks 2 and 5 confirm the load's history start and the memo mapping. Slice 1 is read-only, so it proceeds on the design's assumptions, and task 8.2 corrects them if a check fails
     - _Requirements: 3.2, 3.3, 3.4, 3.5, 3.6_
 
-  - [ ] 4.4 Build the fake YNAB
+  - [x] 4.4 Build the fake YNAB
     - Add `test/fakeYnab.ts`:
       - data: plans, accounts, categories and transactions with `server_knowledge` and delta semantics (including `deleted` records), 400 for memos over 500 code points, and the `approved` default
       - a scripted fault queue (`429`, `5xx`, `400`, `timeoutAfterCommit`, `dropBeforeCommit`, `externalEdit`)
       - exposure both as a `fetchImpl` and as a Playwright route handler
     - _Requirements: 21.4_
 
-  - [ ] 4.5 Write the delta property test
+  - [x] 4.5 Write the delta property test
     - Property 18: a delta merge equals a fresh read, using fake-YNAB mutation scripts with deleted transactions and subtransactions
     - _Requirements: 3.5, 4.5, 9.6_
 
