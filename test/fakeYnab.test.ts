@@ -2,7 +2,7 @@ import type { Route } from '@playwright/test';
 import { describe, expect, it } from 'vite-plus/test';
 import { createYnabClient } from '../src/ynab/client.ts';
 import { ynabFailureOf } from '../src/ynab/errors.ts';
-import { createFakeYnab, type RouteLike } from './fakeYnab.ts';
+import { createFakeYnab, type FakeYnabOptions, type RouteLike } from './fakeYnab.ts';
 
 function setup(options?: Parameters<typeof createFakeYnab>[0], timeoutMs?: number) {
   const fake = createFakeYnab(options);
@@ -134,7 +134,7 @@ describe('fakeYnab data and delta semantics', () => {
 });
 
 describe('fakeYnab writes', () => {
-  const seed = {
+  const seed: FakeYnabOptions = {
     plans: [
       {
         id: 'p',
@@ -143,7 +143,7 @@ describe('fakeYnab writes', () => {
             id: 't1',
             memo: 'one',
             approved: true,
-            cleared: 'reconciled' as const,
+            cleared: 'reconciled',
             flagColor: 'red',
           },
           { id: 't2', memo: 'two', approved: false },

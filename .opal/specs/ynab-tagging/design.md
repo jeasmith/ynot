@@ -113,7 +113,9 @@ Out of scope, per the requirements:
 
 ### Decision 5: A hand-written YNAB client, typed from a pinned OpenAPI document
 
-**Outcome**: Types are generated with `openapi-typescript` (a dev dependency with no runtime code) from a committed copy of YNAB's OpenAPI document (v1.86.0). About 200 lines of hand-written code in `src/ynab/client.ts` perform the requests.
+**Outcome**: Types are generated with `openapi-typescript` (a dev dependency with no runtime code) from a committed copy of YNAB's OpenAPI document (v1.87.0). About 200 lines of hand-written code in `src/ynab/client.ts` perform the requests.
+
+_Build note 2026-10-12: YNAB serves only the current document, which was v1.87.0 when task 4.1 ran. It differs from v1.86.0 only in description text (for example, the split-update note now says the attempt "will return an error"), so the pin moved to v1.87.0. `src/ynab/client.ts` re-exports the wire types as aliases of the generated `components['schemas']`, with `SaveTransactionsResponse` aliased to its `data` member because the client unwraps the envelope. Tests build wire objects with `test/wire.ts`, which fills the fields the schema requires._
 
 **Reasoning**: The client must:
 - assert the destination origin
@@ -292,7 +294,7 @@ The contract checks (see Testing Strategy) run before slice 2 writes anything.
 | Operation planning, recheck, undo planning | Domain | `src/domain/operations/` |
 | HTTP client, network boundary, error classification | YNAB adapter | `src/ynab/client.ts`, `src/ynab/errors.ts` |
 | Initial load, mapping, delta merge | YNAB adapter | `src/ynab/load.ts`, `src/ynab/map.ts`, `src/ynab/delta.ts` |
-| Generated API types | YNAB adapter | `src/ynab/openapi.generated.ts` (from `openapi/ynab-1.86.0.yaml`) |
+| Generated API types | YNAB adapter | `src/ynab/openapi.generated.ts` (from `openapi/ynab-1.87.0.yaml`) |
 | Session store, Budget Session, refresh on return | Session runtime | `src/session/store.ts`, `src/session/refreshOnReturn.ts` |
 | Remembered PAT | Session runtime | `src/session/patStorage.ts` |
 | Write engine, undo slot | Session runtime | `src/writes/` |

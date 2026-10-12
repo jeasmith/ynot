@@ -13,7 +13,7 @@ import { buildTagIndex } from '../../domain/tags/tagIndex.ts';
 import type { BudgetSessionSnapshot } from '../../session/store.ts';
 import type { CurrencyFormat } from '../../ynab/client.ts';
 
-export const GBP: CurrencyFormat = {
+export const GBP: NonNullable<CurrencyFormat> = {
   iso_code: 'GBP',
   example_format: '123,456.78',
   decimal_digits: 2,

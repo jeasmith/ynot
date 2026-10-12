@@ -8,20 +8,10 @@ import { createYnabClient, type TransactionDetail } from './client.ts';
 import { mergeTransactions } from './delta.ts';
 import { loadBudget } from './load.ts';
 import { mapTransaction } from './map.ts';
+import { wireSub, wireTransaction } from '../../test/wire.ts';
 
 function wire(id: string, over: Partial<TransactionDetail> = {}): TransactionDetail {
-  return {
-    id,
-    date: '2024-01-01',
-    amount: -1_000,
-    memo: null,
-    cleared: 'cleared',
-    approved: true,
-    account_id: 'a1',
-    deleted: false,
-    subtransactions: [],
-    ...over,
-  };
+  return wireTransaction({ id, ...over });
 }
 
 const idOf = (s: string) => s as TransactionId;
@@ -63,12 +53,8 @@ describe('mergeTransactions', () => {
   });
 
   it('replaces a returned parent’s subtransactions with its non-deleted ones', () => {
-    const sub = (id: string, deleted = false, memo: string | null = null) => ({
-      id,
-      amount: -100,
-      memo,
-      deleted,
-    });
+    const sub = (id: string, deleted = false, memo: string | null = null) =>
+      wireSub({ id, amount: -100, memo, deleted });
     const current = mapOf(wire('t1', { subtransactions: [sub('s1'), sub('s2')] }));
     const next = mergeTransactions(current, [
       wire('t1', { subtransactions: [sub('s1', false, '#a'), sub('s2', true), sub('s3')] }),

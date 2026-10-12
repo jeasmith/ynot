@@ -11,6 +11,7 @@ import type {
   TransactionDetail,
   PlanSummary,
 } from '../src/ynab/client.ts';
+import { wireAccount, wireCategory, wireCategoryGroup } from './wire.ts';
 
 const ORIGIN = 'https://api.ynab.com';
 const MAX_MEMO_CODE_POINTS = 500;
@@ -59,7 +60,7 @@ export interface FakeTransactionInit {
   payeeName?: string | null;
   categoryId?: string | null;
   transferTransactionId?: string | null;
-  flagColor?: string | null;
+  flagColor?: TransactionDetail['flag_color'];
   subtransactions?: readonly FakeSubTransactionInit[];
   deleted?: boolean;
 }
@@ -210,31 +211,31 @@ function toTransaction(t: FakeTransactionInit): TransactionDetail {
 }
 
 function toAccount(a: FakeAccountInit): Account {
-  return {
+  return wireAccount({
     id: a.id,
     name: a.name ?? a.id,
-    type: 'checking',
     on_budget: a.onBudget ?? true,
     closed: a.closed ?? false,
     deleted: a.deleted ?? false,
-  };
+  });
 }
 
 function toGroup(g: FakeCategoryGroupInit): CategoryGroupWithCategories {
-  return {
+  return wireCategoryGroup({
     id: g.id,
     name: g.name ?? g.id,
-    hidden: false,
     deleted: g.deleted ?? false,
-    categories: (g.categories ?? []).map((c) => ({
-      id: c.id,
-      category_group_id: g.id,
-      category_group_name: g.name ?? g.id,
-      name: c.name ?? c.id,
-      hidden: c.hidden ?? false,
-      deleted: c.deleted ?? false,
-    })),
-  };
+    categories: (g.categories ?? []).map((c) =>
+      wireCategory({
+        id: c.id,
+        category_group_id: g.id,
+        category_group_name: g.name ?? g.id,
+        name: c.name ?? c.id,
+        hidden: c.hidden ?? false,
+        deleted: c.deleted ?? false,
+      }),
+    ),
+  });
 }
 
 type Outcome =

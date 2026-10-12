@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import type { Account, CategoryGroupWithCategories, TransactionDetail } from './client.ts';
 import { mapAccounts, mapCategories, mapTransaction } from './map.ts';
+import { wireAccount, wireCategory, wireCategoryGroup, wireSub } from '../../test/wire.ts';
 
 function wire(over: Partial<TransactionDetail> = {}): TransactionDetail {
   return {
@@ -82,8 +83,8 @@ describe('mapTransaction', () => {
             transfer_transaction_id: 'x',
             deleted: false,
           },
-          { id: 's2', amount: -7_340, memo: '', deleted: false },
-          { id: 's3', amount: -100, memo: '#gone', deleted: true },
+          wireSub({ id: 's2', amount: -7_340, memo: '' }),
+          wireSub({ id: 's3', amount: -100, memo: '#gone', deleted: true }),
         ],
       }),
     );
@@ -110,9 +111,9 @@ describe('mapTransaction', () => {
 
 describe('mapAccounts', () => {
   const accounts: Account[] = [
-    { id: 'a1', name: 'Current', on_budget: true, closed: false, deleted: false },
-    { id: 'a2', name: 'Old', on_budget: false, closed: true, deleted: false },
-    { id: 'a3', name: 'Removed', on_budget: true, closed: false, deleted: true },
+    wireAccount({ id: 'a1', name: 'Current' }),
+    wireAccount({ id: 'a2', name: 'Old', on_budget: false, closed: true }),
+    wireAccount({ id: 'a3', name: 'Removed', deleted: true }),
   ];
 
   it('hides deleted accounts and keeps closed ones', () => {
@@ -129,21 +130,20 @@ describe('mapAccounts', () => {
 
 describe('mapCategories', () => {
   const groups: CategoryGroupWithCategories[] = [
-    {
+    wireCategoryGroup({
       id: 'g1',
       name: 'Bills',
-      deleted: false,
       categories: [
-        { id: 'c1', category_group_id: 'g1', name: 'Rent', deleted: false },
-        { id: 'c2', category_group_id: 'g1', name: 'Old bill', deleted: true },
+        wireCategory({ id: 'c1', category_group_id: 'g1', name: 'Rent' }),
+        wireCategory({ id: 'c2', category_group_id: 'g1', name: 'Old bill', deleted: true }),
       ],
-    },
-    {
+    }),
+    wireCategoryGroup({
       id: 'g2',
       name: 'Gone',
       deleted: true,
-      categories: [{ id: 'c3', category_group_id: 'g2', name: 'X', deleted: false }],
-    },
+      categories: [wireCategory({ id: 'c3', category_group_id: 'g2', name: 'X' })],
+    }),
   ];
 
   it('flattens groups, with the group name, and skips deleted groups and categories', () => {

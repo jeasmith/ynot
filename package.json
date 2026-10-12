@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "e2e": "vp build && playwright test",
-    "gen:ynab": "openapi-typescript openapi/ynab-1.86.0.yaml -o src/ynab/openapi.generated.ts"
+    "gen:ynab": "openapi-typescript openapi/ynab-1.87.0.yaml -o src/ynab/openapi.generated.ts"
   },
   "dependencies": {
     "@tanstack/react-virtual": "3.14.15",

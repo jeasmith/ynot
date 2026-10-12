@@ -1,99 +1,19 @@
 import type { IsoDate } from '../domain/model.ts';
 import { abortFailure, classifyResponse, YnabError } from './errors.ts';
+import type { components } from './openapi.generated.ts';
 
-// TEMPORARY wire types. Task 4.1 (`openapi/ynab-1.86.0.yaml` -> `openapi.generated.ts`) is
-// blocked until the sandbox can reach api.ynab.com. When it lands, replace this block with
-// aliases of `components['schemas']` (same names) and nothing else changes.
-// Wire shapes follow YNAB API v1.86.0 (snake_case); they are mapped to the domain in `map.ts`.
+// Wire shapes are YNAB API v1.87.0 (snake_case), generated from `openapi/ynab-1.87.0.yaml` by
+// `vp run gen:ynab`. They are mapped to the domain in `map.ts`.
+type Schemas = components['schemas'];
 
-export interface CurrencyFormat {
-  readonly iso_code: string;
-  readonly example_format: string;
-  readonly decimal_digits: number;
-  readonly decimal_separator: string;
-  readonly symbol_first: boolean;
-  readonly group_separator: string;
-  readonly currency_symbol: string;
-  readonly display_symbol: boolean;
-}
-
-export interface PlanSummary {
-  readonly id: string;
-  readonly name: string;
-  readonly last_modified_on?: string | null;
-  readonly first_month?: string | null;
-  readonly last_month?: string | null;
-  readonly currency_format?: CurrencyFormat | null;
-}
-
-export interface Account {
-  readonly id: string;
-  readonly name: string;
-  readonly type?: string;
-  readonly on_budget: boolean;
-  readonly closed: boolean;
-  readonly deleted: boolean;
-}
-
-export interface Category {
-  readonly id: string;
-  readonly category_group_id: string;
-  readonly category_group_name?: string;
-  readonly name: string;
-  readonly hidden?: boolean;
-  readonly deleted: boolean;
-}
-
-export interface CategoryGroupWithCategories {
-  readonly id: string;
-  readonly name: string;
-  readonly hidden?: boolean;
-  readonly deleted: boolean;
-  readonly categories: readonly Category[];
-}
-
-export interface SubTransaction {
-  readonly id: string;
-  readonly transaction_id?: string;
-  readonly amount: number;
-  readonly memo?: string | null;
-  readonly payee_id?: string | null;
-  readonly payee_name?: string | null;
-  readonly category_id?: string | null;
-  readonly category_name?: string | null;
-  readonly transfer_account_id?: string | null;
-  readonly transfer_transaction_id?: string | null;
-  readonly deleted: boolean;
-}
-
-export interface TransactionDetail {
-  readonly id: string;
-  readonly date: string;
-  readonly amount: number;
-  readonly memo?: string | null;
-  readonly cleared: 'cleared' | 'uncleared' | 'reconciled';
-  readonly approved: boolean;
-  readonly flag_color?: string | null;
-  readonly account_id: string;
-  readonly account_name?: string;
-  readonly payee_id?: string | null;
-  readonly payee_name?: string | null;
-  readonly category_id?: string | null;
-  readonly category_name?: string | null;
-  readonly transfer_account_id?: string | null;
-  readonly transfer_transaction_id?: string | null;
-  readonly deleted: boolean;
-  readonly subtransactions: readonly SubTransaction[];
-}
-
-export interface SaveTransactionsResponse {
-  readonly transaction_ids: readonly string[];
-  readonly transactions?: readonly TransactionDetail[] | null;
-  readonly duplicate_import_ids?: readonly string[] | null;
-  readonly server_knowledge: number;
-}
-
-// End of TEMPORARY wire types.
+export type CurrencyFormat = Schemas['CurrencyFormat'];
+export type PlanSummary = Schemas['PlanSummary'];
+export type Account = Schemas['Account'];
+export type Category = Schemas['Category'];
+export type CategoryGroupWithCategories = Schemas['CategoryGroupWithCategories'];
+export type SubTransaction = Schemas['SubTransaction'];
+export type TransactionDetail = Schemas['TransactionDetail'];
+export type SaveTransactionsResponse = Schemas['SaveTransactionsResponse']['data'];
 
 /** A list response plus the cursor to pass back as `lastKnowledge`. */
 export interface Delta<T> {

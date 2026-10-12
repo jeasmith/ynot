@@ -108,9 +108,9 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
       - markers change no totals
     - _Requirements: 14.1, 14.2, 14.5, 15.1, 15.2, 15.3, 15.4, 15.9_
 
-- [ ] 4. YNAB adapter and session for reading
-  - [ ] 4.1 Add the pinned OpenAPI document and generated types
-    - Commit `openapi/ynab-1.86.0.yaml`, generate `src/ynab/openapi.generated.ts` with `openapi-typescript`, and add a `vp run` script that regenerates it
+- [x] 4. YNAB adapter and session for reading
+  - [x] 4.1 Add the pinned OpenAPI document and generated types
+    - Commit `openapi/ynab-1.87.0.yaml` (v1.86.0 is no longer served; the difference is description text only), generate `src/ynab/openapi.generated.ts` with `openapi-typescript`, and add a `vp run` script that regenerates it
     - _Requirements: 1.1_
 
   - [x] 4.2 Implement error classification and the client
