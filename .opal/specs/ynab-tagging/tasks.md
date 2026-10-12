@@ -140,12 +140,12 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Property 18: a delta merge equals a fresh read, using fake-YNAB mutation scripts with deleted transactions and subtransactions
     - _Requirements: 3.5, 4.5, 9.6_
 
-  - [ ] 4.6 Implement PAT storage
+  - [x] 4.6 Implement PAT storage
     - Add `src/session/patStorage.ts` with `readRememberedPat`, `rememberPat` and `forgetPat` on the `ynot.pat` key, each wrapped in `try`/`catch`
     - Unit tests: round trip, and storage that throws
     - _Requirements: 1.3, 2.9, 22.3_
 
-  - [ ] 4.7 Implement the session store for reading
+  - [x] 4.7 Implement the session store for reading
     - Add `src/session/store.ts` with `AppPhase`, `start`, `connect(pat, remember)`, `chooseBudget`, `switchBudget`, `disconnect`, `refreshNow` and `openTag`
     - Behaviour:
       - the PAT is remembered only after a successful plans call
