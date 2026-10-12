@@ -217,7 +217,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Run axe on each screen at both viewports
     - _Requirements: 3.1, 4.3, 10.3, 10.5, 11.6, 14.2, 20.1, 20.2, 21.3_
 
-- [ ] 7. Checkpoint - Slice 1 is usable
+- [x] 7. Checkpoint - Slice 1 is usable
   - Run `vp check`, `vp test`, `vp build` and `vp run e2e`
   - Deploy a Vercel preview, and have the owner run the read-only live walkthrough (Req 21.1) on the controlled test budget:
     - history older than a year, and closed and tracking accounts
