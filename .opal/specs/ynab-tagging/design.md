@@ -182,6 +182,8 @@ Continuing is a fresh plan of what remains, built from the Operation Results (Re
 
 **Alternative Options**: Radix UI, which has no grid or virtualised-collection primitives.
 
+_Build note 2026-10-12: React Aria injects an inline `<style id="react-aria-pressable-style">` unless an element with that id already exists, and the production CSP refuses inline styles. `index.html` carries a `<meta id="react-aria-pressable-style">` marker that suppresses the injection, and `src/ui/base.css` holds the equivalent `[data-react-aria-pressable]` rule._
+
 ### Decision 11: Recompute derived indexes in full, with memoised memo parsing
 
 **Outcome**: After any data change (load, delta, write), the Tag Index, markers and register counts are recomputed from the whole transaction set. Memo parses are cached in a `Map<string, ParsedMemo>` keyed by raw memo text.
@@ -281,6 +283,8 @@ Plan (domain) ─▶ Impact Preview ─▶ Confirm
 | **4. Release** | Vercel project, production headers check, live walkthroughs | `vercel.json`, release checklist |
 
 The contract checks (see Testing Strategy) run before slice 2 writes anything.
+
+_Build note 2026-10-12: three slice 1 requirements depend on slice 2 and move there. Req 2.6 (the Disconnect warning when write requests are already sent) and Req 3.10 (blocking Switch budget while a Write Operation is unfinished or unverified) need the write engine. Req 10.7 (the Tag reader's count of members outside a single-account Register scope) needs the Register. Tasks 11.1 and 11.3 carry them._
 
 ### Layer Placement
 
@@ -1187,6 +1191,10 @@ These use `@playwright/test`, run against `vp preview` with the `vercel.json` he
   - a `securitypolicyviolation` listener fails the test on any event;
   - `localStorage` holds `ynot.pat` only after Remember, and nothing after Disconnect;
   - API responses carry `no-store` handling (Req 1.4, 1.11, 2.9, 21.6).
+
+_Build note 2026-10-12:_
+- _Locators: the rule applies to controls and status messages. Two exceptions remain. The PAT field is found with `getByLabel`, because a password input has no ARIA role. The Remember checkbox is clicked through its visible label with `getByText`, as a person would, because the native input sits under the drawn box. Its checked state is still asserted with `getByRole('checkbox')`. Static content, such as a tag name or `Last updated`, is asserted with `getByText`._
+- _`no-store`: Playwright cannot observe a request's cache mode, so `src/ynab/client.test.ts` asserts `cache: 'no-store'` on the fetch init. `boundary.spec.ts` checks the browser-side result instead: no Cache Storage, IndexedDB or cookies._
 
 ### Release validation
 

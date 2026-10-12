@@ -318,7 +318,8 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - `AccountRail`: All accounts and each account (including closed ones) with `matching of total` counts
     - `RegisterToolbar`: search, category, group and status facets, and a single-tag facet
     - Add the Register tab to `AppShell`
-    - _Requirements: 5.1, 5.4, 5.5, 5.9_
+    - Tag reader: while the Register's scope is a single account, state how many members lie outside it (Req 10.7, moved from slice 1)
+    - _Requirements: 5.1, 5.4, 5.5, 5.9, 10.7_
 
   - [ ] 11.2 Add the grid, inspector, selection bar, tag picker and toasts
     - `RegisterGrid`:
@@ -343,8 +344,11 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
       - a table with date, payee, account, amount, before → after, status and reason
       - a status filter, Select unchanged/conflicts → review, and Undo
     - Best-effort conflict copy
+    - `AppShell` (moved from slice 1):
+      - Disconnect warns that requests already sent may still take effect (Req 2.6)
+      - Switch budget is blocked while a Write Operation is unfinished or unverified (Req 3.10)
     - Component tests: preview content, the banner, and results filtering and reasons
-    - _Requirements: 4.6, 6.7, 9.5, 12.9, 16.1, 16.2, 16.3, 16.6, 17.9, 17.10, 17.11, 17.12, 18.3, 18.7, 19.1, 19.4_
+    - _Requirements: 2.6, 3.10, 4.6, 6.7, 9.5, 12.9, 16.1, 16.2, 16.3, 16.6, 17.9, 17.10, 17.11, 17.12, 18.3, 18.7, 19.1, 19.4_
 
 - [ ] 12. Slice 2 end-to-end evidence
   - [ ] 12.1 Extend the walkthrough
