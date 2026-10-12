@@ -339,7 +339,7 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 8. WHEN a failed Transaction is retried, THE application SHALL require a fresh preview rather than replay the old write blindly.
 9. THE Operation Results SHALL give each Transaction in the confirmed scope one status: done, unchanged, or conflict. They SHALL show an Unknown Outcome as not yet verified rather than as any of the three.
 10. THE application SHALL describe conflict protection as best effort and SHALL NOT promise absolute prevention of silent overwrites, because pre-write and post-write checks do not eliminate an intervening edit race.
-11. THE Operation Results SHALL show, for each Transaction, its date, payee, account, amount, raw memo before and after, and status. For any status other than done, they SHALL give a plain-language reason, such as `memo changed in YNAB since preview`, `would exceed 500 characters`, `YNAB rejected: <message>`, `YNAB did not answer; it may still apply this change`, `not verified: connection lost`, or `tag only in a split; edit it in YNAB`.
+11. THE Operation Results SHALL show, for each Transaction, its date, payee, account, amount, raw memo before and after, and status. For any status other than done, they SHALL give a plain-language reason, such as `memo changed in YNAB since preview`, `would exceed 500 characters`, `YNAB rejected: <message>`, `YNAB did not complete this request; it may still apply this change`, `not verified: connection lost`, or `tag only in a split; edit it in YNAB`.
 12. THE Operation Results SHALL be filterable by status and SHALL remain available until the next Write Operation is confirmed or the Session ends.
 
 ### Requirement 18: Failures, uncertain outcomes, and recovery
@@ -348,7 +348,7 @@ Domain terms follow [CONTEXT.md](../../../CONTEXT.md).
 
 #### Acceptance Criteria
 
-1. WHEN any write request fails, times out, is rate-limited, or loses its connection, THE application SHALL stop sending further requests for that operation and re-read the operation's Transactions to verify them. For a request that received no response, that re-read SHALL wait, as a best-effort safeguard, until YNAB's documented 30-second request timeout has passed since the request was sent. The result SHALL be reported with a reason saying YNAB may still apply the change.
+1. WHEN any write request fails, times out, is rate-limited, or loses its connection, THE application SHALL stop sending further requests for that operation and re-read the operation's Transactions to verify them. For a request that received no response or a 503 timeout response, that re-read SHALL wait, as a best-effort safeguard, until YNAB's documented 30-second request timeout has passed since the request was sent. The result SHALL be reported with a reason saying YNAB may still apply the change.
 2. WHEN verification finds the intended memo, THE application SHALL mark the Transaction done. An unchanged memo SHALL be marked unchanged, and a memo matching neither SHALL be marked conflict.
 3. IF verification cannot complete, THEN THE application SHALL keep an explicit Unknown Outcome rather than claim success or failure, SHALL offer `Verify again`, and SHALL block further writes while it remains unresolved.
 4. WHEN the user cancels an operation, THE application SHALL stop sending requests after the one in flight, verify requests already sent, and show the Operation Results.

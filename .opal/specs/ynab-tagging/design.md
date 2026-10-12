@@ -713,7 +713,7 @@ export interface Operation {
 - **Stop**: any failure moves to `verifying` (Req 18.1). Items not yet sent become `unchanged` with reason `stoppedAfterFailure`. A cancel does the same with reason `cancelled`, once the in-flight `PATCH`, if any, settles (Req 18.4).
 - **Verify**: one delta read classifies every `sent` item (Req 17.6, 18.2):
   - memo = `after` → `done`
-  - memo = `before` → `unchanged`, with reason `rejected` and YNAB's message when the batch returned 400, or reason `noResponse` when the request timed out or lost its connection. For a `noResponse` request, the verify read is delayed until at least 35 s after the request was sent, beyond YNAB's documented 30 s request timeout. This is best effort: YNAB does not promise that a timed-out request stops processing, so the reason text says the change may still appear. The operation stays in `verifying`, and writes stay blocked, while the delay runs (ADR 0007)
+  - memo = `before` → `unchanged`, with reason `rejected` and YNAB's message when the batch returned 400, or reason `noResponse` when the request timed out, lost its connection, or got a 503 timeout response. For a `noResponse` request, the verify read is delayed until at least 35 s after the request was sent, beyond YNAB's documented 30 s request timeout. This is best effort: YNAB does not promise that a timed-out request stops processing, so the reason text says the change may still appear. The operation stays in `verifying`, and writes stay blocked, while the delay runs (ADR 0007)
   - deleted, or any other memo → `conflict` with reason `externalEdit`
 
   The final verify runs on every operation, not only after a failure.
