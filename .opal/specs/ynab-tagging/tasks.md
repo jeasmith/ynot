@@ -54,7 +54,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Add `src/domain/model.ts` with the branded IDs, `Transaction`, `SubTransaction`, `Account`, `Category` and `DomainState` from the design
     - _Requirements: 3.3, 3.5_
 
-  - [ ] 3.2 Implement Tag Identity and tag text validation
+  - [x] 3.2 Implement Tag Identity and tag text validation
     - Add `src/domain/grammar/identity.ts`: `tagIdentity` as `normalize('NFC').toLowerCase()`, and `validateTagText` with every rejection reason
     - Unit tests:
       - case variants and NFC/NFD forms
@@ -62,18 +62,18 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
       - each validation reason, and acceptance with or without a leading `#`
     - _Requirements: 8.1, 8.2, 8.3, 12.11, 13.9_
 
-  - [ ] 3.3 Implement the memo parser
+  - [x] 3.3 Implement the memo parser
     - Add `src/domain/grammar/parseMemo.ts` following the design's five steps, including the combining-mark base rule
     - Unit tests: the ADR 0004 example table and the design's Unicode cases, `\#`, `C:\#temp`, and `null` or empty memos
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9_
 
-  - [ ] 3.4 Add memo and transaction arbitraries
+  - [x] 3.4 Add memo and transaction arbitraries
     - Add `test/arbitraries.ts`:
       - memos from the weighted alphabet in the design
       - transactions with splits, tagged split lines and transfers
     - _Requirements: 7.1, 10.3_
 
-  - [ ] 3.5 Write property tests for grammar and identity
+  - [x] 3.5 Write property tests for grammar and identity
     - Property 1: tokens are never truncated
     - Property 3: identity is invariant under canonical equivalence and case
     - Property 2 is covered by the example table in 3.3
