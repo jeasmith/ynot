@@ -1,0 +1,79 @@
+/* Base tokens and system fonts for the whole app. No web fonts: the CSP allows own-origin assets only. */
+:root {
+  color-scheme: light dark;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --color-bg: #ffffff;
+  --color-surface: #f6f7f9;
+  --color-border: #c9ced6;
+  /* Boundary of a text field: 3:1 against its surroundings (WCAG 1.4.11). */
+  --color-field-border: #6b7280;
+  --color-text: #1b1f24;
+  --color-muted: #4b5563;
+  --color-accent: #1f5fbf;
+  --color-accent-text: #ffffff;
+  --color-danger: #a4161a;
+  --color-warning-bg: #fff4d6;
+  --color-focus: #1f5fbf;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #12151a;
+    --color-surface: #1b2027;
+    --color-border: #3a424d;
+    --color-field-border: #8b95a3;
+    --color-text: #e8ebef;
+    --color-muted: #aab2bd;
+    --color-accent: #7fb0ff;
+    --color-accent-text: #0b1220;
+    --color-danger: #ff8a8d;
+    --color-warning-bg: #3a2f10;
+    --color-focus: #7fb0ff;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+a {
+  color: var(--color-accent);
+}
+
+/* Text for assistive technology only. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/*
+ * React Aria injects this rule as an inline <style> element, which the production CSP
+ * (style-src 'self') refuses. index.html has a marker element with the id React Aria looks
+ * for, so it skips the injection and this copy applies. Keep it identical to usePress.
+ */
+@layer {
+  [data-react-aria-pressable] {
+    touch-action: pan-x pan-y pinch-zoom;
+  }
+}

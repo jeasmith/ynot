@@ -61,7 +61,7 @@ Checked against YNAB's help centre and by the owner in the YNAB web app on 2026-
 | 8 | Undo | **Undo last operation**, run as an ordinary operation through the same preview, recheck, verify and results pipeline. |
 | 9 | Freshness | Refresh **on demand and when the tab regains focus**, re-plan on Confirm, show "last updated", and block writes while data is stale. |
 | 10 | Budgets | Switching budget is a full reset that keeps a remembered PAT and returns to the budget picker. |
-| 11 | Tag identity | `normalize('NFC').toLowerCase()`. |
+| 11 | Tag identity | `normalize('NFC').toLowerCase()`, then NFC again. |
 | 12 | Smaller items | Keep naming transfer pairs in the total breakdown, the YNAB contract checks and the Unicode-category grammar. Cut the windowed fallback load, the build CSP guard, the deployment-header verifier and the Geist fonts. Keep the CSP in `vercel.json` and check it with `curl -I` at release. |
 | 13 | Testing and release | About six domain property tests (no truncation, identity, rewrite round trip, span-only rewrites, apply-existing no-op, delta equals fresh read), plus new ones for split-line amounts and transfer pairs. Engine and store use example tests against a scripted `fetch`. End-to-end runs in Chromium plus one phone viewport: walkthrough, failures and boundary specs. The release bar is a live test-budget walkthrough plus the simulated-failure checks. |
 | 14 | Build order | **Vertical slices.** Slice 1, a read-only tag reader, is first usable. |

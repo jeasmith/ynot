@@ -15,8 +15,8 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
 
 ## Tasks
 
-- [ ] 1. Scaffold the toolchain, headers and CI
-  - [ ] 1.1 Create the Vite+ React project
+- [x] 1. Scaffold the toolchain, headers and CI
+  - [x] 1.1 Create the Vite+ React project
     - Add `package.json`:
       - pnpm pinned through `packageManager`, Node 24 in `engines`, `vite-plus` pinned to an exact version
       - React 19, `react-aria-components`, `@tanstack/react-virtual`
@@ -31,55 +31,55 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Use system fonts; ship no font files
     - _Requirements: 1.1, 1.3, 1.6, 1.9, 22.3, 22.4_
 
-  - [ ] 1.2 Add deployment headers and the preview header check
+  - [x] 1.2 Add deployment headers and the preview header check
     - Add `vercel.json` exactly as in the design
     - In `vite.config.ts`, read its headers into `preview.headers`
     - Confirm that `vp preview` serves the CSP on `/` and on an asset. If it does not, add a small static server that applies the `vercel.json` headers for Playwright, and note it in the design through the change protocol
     - _Requirements: 1.5, 1.7, 1.8, 1.9_
 
-  - [ ] 1.3 Add CI
-    - Add `.github/workflows/ci.yml`: `pnpm install --frozen-lockfile`, `vp check`, `vp test`, `vp build`
+  - [x] 1.3 Add CI
+    - Add `.github/workflows/ci.yml`: `voidzero-dev/setup-vp`, `vp install --frozen-lockfile`, `vp check`, `vp test`, `vp build`
     - The end-to-end job is added in task 6.1
     - _Requirements: 1.7, 21.3_
 
-- [ ] 2. Checkpoint - Verify the scaffold
+- [x] 2. Checkpoint - Verify the scaffold
   - Run `vp check`, `vp test` and `vp build`
   - Run `vp preview` and confirm the CSP header in the response
   - _Requirements: 1.1, 1.7, 1.9_
 
 ### Slice 1: read-only tag reader
 
-- [ ] 3. Domain core for reading
-  - [ ] 3.1 Add the domain model
+- [x] 3. Domain core for reading
+  - [x] 3.1 Add the domain model
     - Add `src/domain/model.ts` with the branded IDs, `Transaction`, `SubTransaction`, `Account`, `Category` and `DomainState` from the design
     - _Requirements: 3.3, 3.5_
 
-  - [ ] 3.2 Implement Tag Identity and tag text validation
-    - Add `src/domain/grammar/identity.ts`: `tagIdentity` as `normalize('NFC').toLowerCase()`, and `validateTagText` with every rejection reason
+  - [x] 3.2 Implement Tag Identity and tag text validation
+    - Add `src/domain/grammar/identity.ts`: `tagIdentity` as `normalize('NFC').toLowerCase().normalize('NFC')`, and `validateTagText` with every rejection reason
     - Unit tests:
       - case variants and NFC/NFD forms
       - `Straße`/`STRASSE`, full-width/ASCII and `ﬁ`/`fi` all stay distinct
       - each validation reason, and acceptance with or without a leading `#`
     - _Requirements: 8.1, 8.2, 8.3, 12.11, 13.9_
 
-  - [ ] 3.3 Implement the memo parser
+  - [x] 3.3 Implement the memo parser
     - Add `src/domain/grammar/parseMemo.ts` following the design's five steps, including the combining-mark base rule
     - Unit tests: the ADR 0004 example table and the design's Unicode cases, `\#`, `C:\#temp`, and `null` or empty memos
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9_
 
-  - [ ] 3.4 Add memo and transaction arbitraries
+  - [x] 3.4 Add memo and transaction arbitraries
     - Add `test/arbitraries.ts`:
       - memos from the weighted alphabet in the design
       - transactions with splits, tagged split lines and transfers
     - _Requirements: 7.1, 10.3_
 
-  - [ ] 3.5 Write property tests for grammar and identity
+  - [x] 3.5 Write property tests for grammar and identity
     - Property 1: tokens are never truncated
     - Property 3: identity is invariant under canonical equivalence and case
     - Property 2 is covered by the example table in 3.3
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 8.1, 8.2, 8.3_
 
-  - [ ] 3.6 Implement the Tag Index with Contributions
+  - [x] 3.6 Implement the Tag Index with Contributions
     - Add `src/domain/tags/tagIndex.ts` with `buildTagIndex`, which derives:
       - membership as a set over parent and non-deleted split memos
       - per-member `source` and `contributingAmounts` (parent amount, or each tagged split line once)
@@ -94,12 +94,12 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
       - **Canonical Spelling:** ties broken by date and code point (Property 4); repeated occurrences do not change membership (Property 5)
     - _Requirements: 8.4, 8.5, 8.6, 8.7, 9.1, 9.2, 9.6, 14.4, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.8_
 
-  - [ ] 3.7 Write property tests for Contributions and transfer pairs
+  - [x] 3.7 Write property tests for Contributions and transfer pairs
     - Property 6: Contributions and total composition, including that the total is unchanged by scope or filters
     - Property 7: transfer pairs are named and never assumed to cancel
     - _Requirements: 10.1, 10.2, 10.3, 10.5, 10.6, 10.8_
 
-  - [ ] 3.8 Implement markers
+  - [x] 3.8 Implement markers
     - Add `src/domain/tags/markers.ts`: `nearDuplicateKey` and `deriveMarkers`, with near-duplicates (including split-only tags) and single-use
     - Unit tests (Property 19):
       - `#Home-Repair`/`#Home_Repair`/`#HomeRepair` give three pairs
@@ -108,12 +108,12 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
       - markers change no totals
     - _Requirements: 14.1, 14.2, 14.5, 15.1, 15.2, 15.3, 15.4, 15.9_
 
-- [ ] 4. YNAB adapter and session for reading
-  - [ ] 4.1 Add the pinned OpenAPI document and generated types
-    - Commit `openapi/ynab-1.86.0.yaml`, generate `src/ynab/openapi.generated.ts` with `openapi-typescript`, and add a `vp run` script that regenerates it
+- [x] 4. YNAB adapter and session for reading
+  - [x] 4.1 Add the pinned OpenAPI document and generated types
+    - Commit `openapi/ynab-1.87.0.yaml` (v1.86.0 is no longer served; the difference is description text only), generate `src/ynab/openapi.generated.ts` with `openapi-typescript`, and add a `vp run` script that regenerates it
     - _Requirements: 1.1_
 
-  - [ ] 4.2 Implement error classification and the client
+  - [x] 4.2 Implement error classification and the client
     - Add `src/ynab/errors.ts` with `YnabFailure`, where only the client's private timeout reason maps to `timeout` and every other abort maps to `cancelled`
     - Add `src/ynab/client.ts` per the design:
       - origin assertion before the `Authorization` header
@@ -123,29 +123,29 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Unit tests with a recording `fetchImpl` cover status classification, abort reasons and fetch init. Property 22, the network boundary, is covered by example tests
     - _Requirements: 1.4, 1.11, 2.7, 18.9_
 
-  - [ ] 4.3 Implement mapping, delta merge and the initial load
+  - [x] 4.3 Implement mapping, delta merge and the initial load
     - Add `src/ynab/map.ts` (`''` → `null` memos; deleted subtransactions dropped), `src/ynab/delta.ts` (`mergeTransactions`) and `src/ynab/load.ts`
     - The load requests accounts, categories and `transactions?since_date=<first_month>` in parallel
     - Contract checks 2 and 5 confirm the load's history start and the memo mapping. Slice 1 is read-only, so it proceeds on the design's assumptions, and task 8.2 corrects them if a check fails
     - _Requirements: 3.2, 3.3, 3.4, 3.5, 3.6_
 
-  - [ ] 4.4 Build the fake YNAB
+  - [x] 4.4 Build the fake YNAB
     - Add `test/fakeYnab.ts`:
       - data: plans, accounts, categories and transactions with `server_knowledge` and delta semantics (including `deleted` records), 400 for memos over 500 code points, and the `approved` default
       - a scripted fault queue (`429`, `5xx`, `400`, `timeoutAfterCommit`, `dropBeforeCommit`, `externalEdit`)
       - exposure both as a `fetchImpl` and as a Playwright route handler
     - _Requirements: 21.4_
 
-  - [ ] 4.5 Write the delta property test
+  - [x] 4.5 Write the delta property test
     - Property 18: a delta merge equals a fresh read, using fake-YNAB mutation scripts with deleted transactions and subtransactions
     - _Requirements: 3.5, 4.5, 9.6_
 
-  - [ ] 4.6 Implement PAT storage
+  - [x] 4.6 Implement PAT storage
     - Add `src/session/patStorage.ts` with `readRememberedPat`, `rememberPat` and `forgetPat` on the `ynot.pat` key, each wrapped in `try`/`catch`
     - Unit tests: round trip, and storage that throws
     - _Requirements: 1.3, 2.9, 22.3_
 
-  - [ ] 4.7 Implement the session store for reading
+  - [x] 4.7 Implement the session store for reading
     - Add `src/session/store.ts` with `AppPhase`, `start`, `connect(pat, remember)`, `chooseBudget`, `switchBudget`, `disconnect`, `refreshNow` and `openTag`
     - Behaviour:
       - the PAT is remembered only after a successful plans call
@@ -163,18 +163,18 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
       - `refreshOnReturn` fires on visible, but not mid-refresh; the disposer removes the listener
     - _Requirements: 2.1, 2.2, 2.5, 2.8, 2.9, 2.10, 3.1, 3.6, 3.7, 3.8, 3.9, 4.1, 4.3, 4.7, 4.10_
 
-- [ ] 5. UI for reading
-  - [ ] 5.1 Connect the store to React and add the app shell
+- [x] 5. UI for reading
+  - [x] 5.1 Connect the store to React and add the app shell
     - `useSyncExternalStore` binding and an error boundary showing "Something went wrong" with Disconnect
     - Add `AppShell` with:
       - Switch budget and Refresh
       - `Last updated` and `Updates paused` with Retry
-      - Disconnect confirmation stating the PAT is not revoked and a remembered token is forgotten, linking to YNAB Developer Settings, and warning when a Write Operation has requests already sent
+      - Disconnect confirmation stating the PAT is not revoked and a remembered token is forgotten, and linking to YNAB Developer Settings
       - a Tags tab (the Register tab arrives in slice 2)
     - Mount `refreshOnReturn`
-    - _Requirements: 2.5, 2.6, 3.9, 4.1, 4.7, 4.10, 20.3, 20.5_
+    - _Requirements: 2.5, 3.9, 4.1, 4.7, 4.10, 20.3, 20.5_
 
-  - [ ] 5.2 Add the connect screen and budget picker
+  - [x] 5.2 Add the connect screen and budget picker
     - `ConnectScreen`:
       - PAT field and a `Remember on this device` checkbox, off by default
       - a privacy explanation, including that a Remembered PAT grants full access until revoked
@@ -182,7 +182,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - `BudgetPicker`: plan list, empty state, loading, and load failure with Retry and Disconnect
     - _Requirements: 1.2, 1.10, 2.9, 2.10, 3.1, 3.6, 3.7, 3.8_
 
-  - [ ] 5.3 Add the Tag Overview, tag rail and Tag reader
+  - [x] 5.3 Add the Tag Overview, tag rail and Tag reader
     - `TagOverview`:
       - a React Aria Table of every tag with net, outflow, inflow, count and marker icons with accessible names
       - sortable by each column and labelled `all accounts · all time`
@@ -195,10 +195,10 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
       - the near-duplicate marker naming the other tag
     - Empty-vocabulary state in both views
     - Component tests: an overview sort, the restaurant example rendering per-line Contributions, and markers with accessible names
-    - _Requirements: 10.2, 10.5, 10.6, 10.7, 11.1, 11.2, 11.4, 11.5, 11.6, 11.7, 14.2, 14.3, 20.2_
+    - _Requirements: 10.2, 10.5, 10.6, 11.1, 11.2, 11.4, 11.5, 11.6, 11.7, 14.2, 14.3, 20.2_
 
-- [ ] 6. Slice 1 end-to-end evidence
-  - [ ] 6.1 Configure Playwright and the boundary spec
+- [x] 6. Slice 1 end-to-end evidence
+  - [x] 6.1 Configure Playwright and the boundary spec
     - Playwright config:
       - Desktop Chromium and Pixel 7 projects against `vp preview`, with the fake YNAB as a `page.route` handler
       - a `securitypolicyviolation` listener that fails any test
@@ -209,7 +209,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Add the end-to-end job to CI
     - _Requirements: 1.4, 1.7, 1.11, 2.2, 2.9, 20.2, 21.3, 21.6_
 
-  - [ ] 6.2 Add the slice 1 walkthrough spec
+  - [x] 6.2 Add the slice 1 walkthrough spec
     - `e2e/walkthrough.spec.ts`:
       - connect with and without remember, and budget choice
       - the overview, and the reader showing split-line Contributions and a transfer pair
@@ -217,7 +217,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - Run axe on each screen at both viewports
     - _Requirements: 3.1, 4.3, 10.3, 10.5, 11.6, 14.2, 20.1, 20.2, 21.3_
 
-- [ ] 7. Checkpoint - Slice 1 is usable
+- [x] 7. Checkpoint - Slice 1 is usable
   - Run `vp check`, `vp test`, `vp build` and `vp run e2e`
   - Deploy a Vercel preview, and have the owner run the read-only live walkthrough (Req 21.1) on the controlled test budget:
     - history older than a year, and closed and tracking accounts
@@ -318,7 +318,8 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
     - `AccountRail`: All accounts and each account (including closed ones) with `matching of total` counts
     - `RegisterToolbar`: search, category, group and status facets, and a single-tag facet
     - Add the Register tab to `AppShell`
-    - _Requirements: 5.1, 5.4, 5.5, 5.9_
+    - Tag reader: while the Register's scope is a single account, state how many members lie outside it (Req 10.7, moved from slice 1)
+    - _Requirements: 5.1, 5.4, 5.5, 5.9, 10.7_
 
   - [ ] 11.2 Add the grid, inspector, selection bar, tag picker and toasts
     - `RegisterGrid`:
@@ -343,8 +344,11 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
       - a table with date, payee, account, amount, before → after, status and reason
       - a status filter, Select unchanged/conflicts → review, and Undo
     - Best-effort conflict copy
+    - `AppShell` (moved from slice 1):
+      - Disconnect warns that requests already sent may still take effect (Req 2.6)
+      - Switch budget is blocked while a Write Operation is unfinished or unverified (Req 3.10)
     - Component tests: preview content, the banner, and results filtering and reasons
-    - _Requirements: 4.6, 6.7, 9.5, 12.9, 16.1, 16.2, 16.3, 16.6, 17.9, 17.10, 17.11, 17.12, 18.3, 18.7, 19.1, 19.4_
+    - _Requirements: 2.6, 3.10, 4.6, 6.7, 9.5, 12.9, 16.1, 16.2, 16.3, 16.6, 17.9, 17.10, 17.11, 17.12, 18.3, 18.7, 19.1, 19.4_
 
 - [ ] 12. Slice 2 end-to-end evidence
   - [ ] 12.1 Extend the walkthrough

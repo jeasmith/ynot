@@ -12,6 +12,10 @@ Use the default canonical labels: `needs-triage`, `needs-info`, `ready-for-agent
 
 This is a single-context repo: root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
 
+### Network access
+
+If the environment's network policy blocks a request, report the blocked host and suggest the narrowest allowed-domains pattern that would permit it (for example `vercel.com`, not `*`). The owner reviews and updates the environment; don't work around the block.
+
 <!-- OPALSPEC-INSTRUCTIONS-START -->
 ﻿# Project Agent Instructions
 
