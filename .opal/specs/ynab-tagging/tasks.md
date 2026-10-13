@@ -244,8 +244,8 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
 
 ### Slice 2: Register and tagging
 
-- [ ] 9. Domain for tagging
-  - [ ] 9.1 Implement the Register
+- [x] 9. Domain for tagging
+  - [x] 9.1 Implement the Register
     - Add `src/domain/register/register.ts` with `RegisterScope` (`account` or `all`), single-tag filters, search across payee, account, category, group and split memos, facet counts, and per-scope counts
     - Unit tests:
       - All accounts versus a single account, with the account name shown in All accounts
@@ -253,17 +253,17 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
       - an empty result does not claim the history is empty
     - _Requirements: 5.1, 5.2, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 5.11, 5.12_
 
-  - [ ] 9.2 Implement memo rewriting
+  - [x] 9.2 Implement memo rewriting
     - Add `src/domain/memo/rewrite.ts` with `applyTag`, `removeIdentity`, `renameIdentity` (merge removes the source when the target is present) and `fits`
     - Unit tests: the `·` regression, removal at the start, end and middle, the line-break preference, extra markers kept on rename, and over-length handling
     - _Requirements: 12.2, 12.4, 12.5, 12.6, 13.2, 13.3_
 
-  - [ ] 9.3 Write property tests for rewriting
+  - [x] 9.3 Write property tests for rewriting
     - Property 8: apply then remove is the identity
     - Property 9: rewrites touch only tag spans
     - _Requirements: 7.7, 12.2, 12.4, 12.5, 13.8_
 
-  - [ ] 9.4 Implement planning, recheck and undo planning
+  - [x] 9.4 Implement planning, recheck and undo planning
     - Add `src/domain/operations/plan.ts` with `PlannedChange`, `PlanRequest`, `Exclusion`, `OperationPlan`, `UndoSlot`, `planApply`, `planRemove`, `planRename`, `planDelete`, `planUndo`, `replan`, `planDiffers` and `recheck`
     - `planApply` and `planRename` validate with `validateTagText` and throw on invalid text
     - Unit tests:
@@ -275,7 +275,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
       - invalid spellings and same-identity rename targets throw
     - _Requirements: 9.3, 9.4, 9.5, 9.7, 12.1, 12.3, 12.7, 12.9, 12.11, 13.1, 13.2, 13.3, 13.5, 13.8, 13.9, 16.2, 16.3, 17.1, 17.2, 17.3, 19.2, 19.3_
 
-  - [ ] 9.5 Write the no-op apply property test
+  - [x] 9.5 Write the no-op apply property test
     - Property 11: applying an existing tag is a no-op
     - _Requirements: 12.3_
 

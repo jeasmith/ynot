@@ -103,10 +103,11 @@ function proseOf(memo: string, tokens: readonly TagToken[]): string {
 }
 
 /**
- * Removes `[start, end)` and at most one adjacent whitespace code point. Working right to left
- * keeps the indices of the tokens still to be removed valid.
+ * Removes `[start, end)` and at most one adjacent whitespace code point (the gap rule, shared by
+ * prose display and `src/domain/memo/rewrite.ts`). Working right to left keeps the indices of the
+ * tokens still to be removed valid.
  */
-function removeSpan(text: string, start: number, end: number): string {
+export function removeSpan(text: string, start: number, end: number): string {
   const left = TRAILING_WHITE_SPACE.exec(text.slice(0, start))?.[0] ?? '';
   const right = LEADING_WHITE_SPACE.exec(text.slice(end))?.[0] ?? '';
   const lastOfLeft = left === '' ? '' : Array.from(left).at(-1)!;
