@@ -19,6 +19,8 @@ export const BATCH_SIZE = 50;
 /** Appended to a memo while a check runs, so a leftover change is easy to find in YNAB. */
 export const MARKER = '#ynot-contract-check';
 const MAX_MEMO_CODE_POINTS = 500;
+/** A `since_date` before any YNAB budget, for reading the whole history. */
+export const WHOLE_HISTORY = '1900-01-01';
 
 export type CheckId = 1 | 2 | 3 | 4 | 5;
 export type Outcome = 'pass' | 'fail' | 'inconclusive' | 'skipped';
@@ -143,8 +145,11 @@ function createApi(pat: string, fetchImpl: typeof fetch) {
       });
       return data.plans;
     },
-    /** Every live transaction, optionally from `sinceDate`. */
-    async readAll(planId: string, sinceDate?: string): Promise<TransactionList> {
+    /**
+     * Every live transaction from `sinceDate`. YNAB defaults a missing `since_date` to one year
+     * ago, so the whole history needs an explicit early date.
+     */
+    async readAll(planId: string, sinceDate: string = WHOLE_HISTORY): Promise<TransactionList> {
       const data = await call<TransactionList>('GET', `${plan(planId)}/transactions`, {
         since_date: sinceDate,
       });
@@ -336,7 +341,7 @@ export async function runContractChecks(options: ContractCheckOptions): Promise<
   }
 
   // ---- Check 2: read only ----
-  log('Check 2: comparing a read from first_month with a read of the whole history');
+  log(`Check 2: comparing a read from first_month with a read from ${WHOLE_HISTORY}`);
   const whole = await api.readAll(planId);
   const fromFirst = await api.readAll(planId, firstMonth);
   {
