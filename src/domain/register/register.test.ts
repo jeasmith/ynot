@@ -62,6 +62,16 @@ describe('buildRegister', () => {
     expect(rowIds(view(ALL, { search: '  weekly ' }))).toEqual(['t1']);
   });
 
+  it('matches search text regardless of Unicode normalisation', () => {
+    const cafe = domainState([tx('c', null, { payeeName: 'Caf\u00e9 Nero' })], { accounts });
+    const v = buildRegister({
+      ...cafe,
+      scope: ALL,
+      filters: { ...NO_FILTERS, search: 'cafe\u0301' },
+    });
+    expect(v.rows.map((r) => r.transaction.id)).toEqual(['c']);
+  });
+
   it('filters by category and group through split lines, and by status', () => {
     expect(rowIds(view(ALL, { categoryIds: new Set([cid('fuel')]) }))).toEqual(['t2']);
     expect(rowIds(view(ALL, { categoryGroupIds: new Set([gid('everyday')]) }))).toEqual([

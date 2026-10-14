@@ -105,7 +105,9 @@ function proseOf(memo: string, tokens: readonly TagToken[]): string {
 /**
  * Removes `[start, end)` and at most one adjacent whitespace code point (the gap rule, shared by
  * prose display and `src/domain/memo/rewrite.ts`). Working right to left keeps the indices of the
- * tokens still to be removed valid.
+ * tokens still to be removed valid. Trimmed trailing punctuation is not part of the span, so it
+ * stays where it was: `end #Tax.` becomes `end .`. The design keeps that rather than guess whether
+ * the punctuation belonged to the tag or to the sentence (Req 12.4).
  */
 export function removeSpan(text: string, start: number, end: number): string {
   const left = TRAILING_WHITE_SPACE.exec(text.slice(0, start))?.[0] ?? '';

@@ -71,7 +71,7 @@ function categoryIdsOf(t: Transaction): CategoryId[] {
   return ids;
 }
 
-/** Lowercased text that search matches: payee, account, category, group and prose memo text. */
+/** NFC, lowercased text that search matches: payee, account, category, group and prose memo text. */
 function searchText(
   t: Transaction,
   accounts: ReadonlyMap<AccountId, Account>,
@@ -93,12 +93,12 @@ function searchText(
     add(s.payeeName);
     add(parseMemo(s.memo).prose);
   }
-  return parts.join('\n').toLowerCase();
+  return parts.join('\n').normalize('NFC').toLowerCase();
 }
 
 export function buildRegister(input: RegisterInput): RegisterView {
   const { transactions, accounts, categories, index, scope, filters } = input;
-  const query = filters.search.trim().toLowerCase();
+  const query = filters.search.trim().normalize('NFC').toLowerCase();
 
   /** Every filter except the tag facet. */
   const passesNonTag = (t: Transaction): boolean => {
