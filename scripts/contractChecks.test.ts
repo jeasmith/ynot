@@ -208,6 +208,18 @@ describe('runContractChecks against the fake YNAB', () => {
     expect(check5.notes).toContain('Sending null stores null.');
   });
 
+  it('fails check 5 when the owner can tell an emptied "" from null in YNAB', async () => {
+    const { fake } = setup();
+    const run = await runContractChecks({
+      pat: PAT,
+      planId: 'plan-1',
+      fetchImpl: fake.fetchImpl,
+      ask: async () => 'n',
+      now,
+    });
+    expect(run.results.find((r) => r.id === 5)?.outcome).toBe('fail');
+  });
+
   it('marks a check that fails because YNAB missed older transactions', async () => {
     const { fake } = setup(seed([{ id: 'before-first-month', date: '2019-12-31' }]));
     const run = await runContractChecks({

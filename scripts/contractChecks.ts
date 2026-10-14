@@ -550,7 +550,10 @@ export async function runContractChecks(options: ContractCheckOptions): Promise<
       else notes.push('Nobody compared them in YNAB.');
       const valid = (m: string | null | undefined) => m === null || m === '' || m === undefined;
       if (!valid(storedA) || !valid(storedB)) record(5, 'fail', notes);
-      else record(5, visible === 'y' || visible === 'n' ? 'pass' : 'inconclusive', notes);
+      // The mapper treats "" and null as the same memo, which only holds if nobody can tell them
+      // apart in YNAB; a visible difference fails so it goes through the change protocol.
+      else if (visible === 'n') record(5, 'fail', notes);
+      else record(5, visible === 'y' ? 'pass' : 'inconclusive', notes);
     } finally {
       await restore([a, b], expected);
     }
