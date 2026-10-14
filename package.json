@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "contract-checks": "node scripts/contract-checks.ts",
     "e2e": "vp build && playwright test",
     "gen:ynab": "openapi-typescript openapi/ynab-1.87.0.yaml -o src/ynab/openapi.generated.ts"
   },

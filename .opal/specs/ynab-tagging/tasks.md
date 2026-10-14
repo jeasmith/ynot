@@ -229,7 +229,7 @@ Work test-first within each task (TDD): write the listed tests, see them fail, t
 ### Contract checks
 
 - [ ] 8. Run the YNAB contract checks (owner; before slice 2 writes)
-  - [ ] 8.1 Write the contract-check script
+  - [x] 8.1 Write the contract-check script
     - Add `scripts/contract-checks.ts`:
       - it reads a PAT and a test plan ID from environment variables, never a file, and uses plain `fetch`
       - it exercises checks 1–5 from the design

@@ -1,0 +1,4 @@
+# Only the contract-check scripts go into a build context (scripts/contract-checks.Dockerfile).
+*
+!scripts/contract-checks.ts
+!scripts/contractChecks.ts
