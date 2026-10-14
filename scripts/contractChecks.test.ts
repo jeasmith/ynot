@@ -5,7 +5,7 @@ import { BATCH_SIZE, formatReport, MARKER, runContractChecks } from './contractC
 const PAT = 'pat-secret-value';
 const PROSE = 'lunch with Sam at the corner place';
 
-function seed(extra: FakeTransactionInit[] = [], plain = BATCH_SIZE + 5): FakeTransactionInit[] {
+function seed(extra: FakeTransactionInit[] = [], plain = 2 * BATCH_SIZE): FakeTransactionInit[] {
   const many: FakeTransactionInit[] = Array.from({ length: plain }, (_, i) => ({
     id: `p${i}`,
     date: `2025-03-${String((i % 28) + 1).padStart(2, '0')}`,
@@ -169,6 +169,29 @@ describe('runContractChecks against the fake YNAB', () => {
     expect(fake.getTransaction('plan-1', 'old')?.memo).toBe('edited in YNAB');
     expect(run.unrestored).toHaveLength(1);
     expect(run.unrestored[0]).toContain('2020-01-04');
+  });
+
+  it('resends only memos that exist, and never one edited in YNAB during the run', async () => {
+    const { fake } = setup();
+    let edited = false;
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const response = await fake.fetchImpl(input, init);
+      if (init?.method === 'PATCH' && !edited) {
+        edited = true;
+        fake.externalEdit('plan-1', 'p83', 'edited in YNAB');
+      }
+      return response;
+    };
+    const run = await runContractChecks({ pat: PAT, planId: 'plan-1', fetchImpl, now });
+
+    expect(run.results.find((r) => r.id === 3)?.outcome).toBe('pass');
+    const batch = fake
+      .patches()
+      .map((p) => (p.body as { transactions: { id: string; memo: string | null }[] }).transactions)
+      .find((items) => items.length === BATCH_SIZE)!;
+    expect(batch.every((item) => item.memo !== null && item.memo !== '')).toBe(true);
+    expect(batch.some((item) => item.id === 'p83')).toBe(false);
+    expect(fake.getTransaction('plan-1', 'p83')?.memo).toBe('edited in YNAB');
   });
 
   it('reports check 5 as inconclusive when nobody looks in YNAB', async () => {

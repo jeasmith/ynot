@@ -35,7 +35,7 @@ if (!pat) {
   console.error('Set YNAB_PAT to a personal access token for the test budget.');
   process.exit(2);
 }
-if (reportIndex !== -1 && !reportPath) {
+if (reportIndex !== -1 && (!reportPath || reportPath.startsWith('--'))) {
   console.error('--report needs a path.');
   process.exit(2);
 }

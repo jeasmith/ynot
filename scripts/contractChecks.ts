@@ -226,7 +226,7 @@ interface Targets {
   readonly oldest: TransactionDetail | undefined;
   /** Check 5: two transactions with no memo. */
   readonly emptyMemo: readonly TransactionDetail[];
-  /** Check 3: plain transactions to resend unchanged. */
+  /** Check 3: plain transactions with a memo, newest first, to resend unchanged. */
   readonly batch: readonly TransactionDetail[];
 }
 
@@ -258,11 +258,13 @@ export function chooseTargets(all: readonly TransactionDetail[]): Targets {
     .slice(0, 2);
   for (const t of emptyMemo) used.add(t.id);
 
+  // Check 3 resends memos as they are, so only non-empty ones: until check 5 has run, resending a
+  // missing memo might not read back the same. Every candidate is kept, so check 3 can skip any
+  // that change in YNAB before it sends.
   const batch = [...all]
     .sort(byDate)
     .reverse()
-    .filter((t) => !used.has(t.id) && !isSplit(t) && !isTransfer(t))
-    .slice(0, BATCH_SIZE);
+    .filter((t) => !used.has(t.id) && !isSplit(t) && !isTransfer(t) && Boolean(t.memo));
 
   return { fieldCheck, oldest, emptyMemo, batch };
 }
@@ -441,17 +443,34 @@ export async function runContractChecks(options: ContractCheckOptions): Promise<
   // ---- Check 3: resend 50 unchanged memos in one PATCH ----
   if (!check1Passed) {
     record(3, 'skipped', ['Check 1 did not pass, so no batch write was risked.']);
-  } else if (targets.batch.length < BATCH_SIZE) {
-    record(3, 'inconclusive', [`The plan has only ${targets.batch.length} plain transactions.`]);
   } else {
+    // Re-read just before sending and resend YNAB's current values, skipping anything edited in
+    // YNAB since the run began, so the batch can never overwrite a change made meanwhile.
+    const fresh = new Map((await api.readAll(planId)).transactions.map((t) => [t.id, t]));
+    const batch: TransactionDetail[] = [];
+    for (const before of targets.batch) {
+      const now = fresh.get(before.id);
+      if (now && now.memo === before.memo && now.approved === before.approved) batch.push(now);
+      if (batch.length === BATCH_SIZE) break;
+    }
+    if (batch.length < BATCH_SIZE) {
+      record(3, 'inconclusive', [
+        `The plan has only ${batch.length} plain transactions with a memo; ${BATCH_SIZE} are needed.`,
+      ]);
+    } else {
+      await sendBatch(batch);
+    }
+  }
+
+  async function sendBatch(batch: readonly TransactionDetail[]): Promise<void> {
     log(`Check 3: resending ${BATCH_SIZE} memos unchanged in one PATCH`);
     try {
       const saved = await api.patch(
         planId,
-        targets.batch.map((t) => ({ id: t.id, memo: t.memo ?? null, approved: t.approved })),
+        batch.map((t) => ({ id: t.id, memo: t.memo ?? null, approved: t.approved })),
       );
       const after = new Map((await api.readAll(planId)).transactions.map((t) => [t.id, t]));
-      const altered = targets.batch.filter((t) => {
+      const altered = batch.filter((t) => {
         const a = after.get(t.id);
         return !a || changedFields(t, a, []).length > 0;
       });
