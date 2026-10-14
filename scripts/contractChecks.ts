@@ -227,7 +227,7 @@ const byDate = (a: TransactionDetail, b: TransactionDetail) =>
 interface Targets {
   /** Check 1: the kinds whose other fields are most at risk from a memo PATCH. */
   readonly fieldCheck: readonly { kind: string; t: TransactionDetail }[];
-  /** Check 4: the oldest transaction that can carry the marker. */
+  /** Check 4: the oldest transaction from the first month on that can carry the marker. */
   readonly oldest: TransactionDetail | undefined;
   /** Check 5: two transactions with no memo. */
   readonly emptyMemo: readonly TransactionDetail[];
@@ -235,7 +235,10 @@ interface Targets {
   readonly batch: readonly TransactionDetail[];
 }
 
-export function chooseTargets(all: readonly TransactionDetail[]): Targets {
+export function chooseTargets(
+  all: readonly TransactionDetail[],
+  firstMonth: string = WHOLE_HISTORY,
+): Targets {
   const markable = all.filter(fitsMarker).sort(byDate);
   const used = new Set<string>();
   const fieldCheck: { kind: string; t: TransactionDetail }[] = [];
@@ -253,7 +256,8 @@ export function chooseTargets(all: readonly TransactionDetail[]): Targets {
   pick('transfer', isTransfer);
   if (fieldCheck.length === 0) pick('plain', () => true);
 
-  const oldest = markable.find((t) => !used.has(t.id));
+  // The app reads from the first month, so the delta only has to show changes it can see.
+  const oldest = markable.find((t) => !used.has(t.id) && t.date >= firstMonth);
   if (oldest) used.add(oldest.id);
 
   // Check 5 needs memo-less transactions so no prose is ever at stake.
@@ -367,7 +371,7 @@ export async function runContractChecks(options: ContractCheckOptions): Promise<
     return finish();
   }
 
-  const targets = chooseTargets(whole.transactions);
+  const targets = chooseTargets(whole.transactions, firstMonth);
 
   // ---- Checks 1 and 4: one marker write, then a full read and a delta read ----
   const marked = [
@@ -501,10 +505,19 @@ export async function runContractChecks(options: ContractCheckOptions): Promise<
   }
 
   // ---- Check 5: "" versus null ----
-  if (targets.emptyMemo.length < 2) {
+  // Re-read first and keep only those still memo-less, so the marker never covers a memo added in
+  // YNAB since the run began and the writes resend YNAB's current approval.
+  const current5 =
+    targets.emptyMemo.length < 2
+      ? new Map<string, TransactionDetail>()
+      : new Map((await api.readAll(planId)).transactions.map((t) => [t.id, t]));
+  const empty5 = targets.emptyMemo
+    .map((t) => current5.get(t.id))
+    .filter((t): t is TransactionDetail => t !== undefined && (t.memo ?? '') === '');
+  if (empty5.length < 2) {
     record(5, 'inconclusive', ['The plan needs two plain transactions with no memo.']);
   } else {
-    const [a, b] = targets.emptyMemo as [TransactionDetail, TransactionDetail];
+    const [a, b] = empty5 as [TransactionDetail, TransactionDetail];
     log(
       'Check 5: giving two memo-less transactions a memo, then emptying one to "" and one to null',
     );

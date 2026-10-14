@@ -234,6 +234,42 @@ describe('runContractChecks against the fake YNAB', () => {
     expect(check2.notes.join(' ')).toContain('1 transactions dated before first_month');
   });
 
+  it('changes a transaction the app can see for check 4, not one before first_month', async () => {
+    const { fake } = setup(seed([{ id: 'before-first-month', date: '2019-12-31', memo: PROSE }]));
+    const run = await runContractChecks({
+      pat: PAT,
+      planId: 'plan-1',
+      fetchImpl: fake.fetchImpl,
+      now,
+    });
+    expect(run.results.find((r) => r.id === 4)?.outcome).toBe('pass');
+    const written = fake
+      .patches()
+      .flatMap((p) => (p.body as { transactions: { id: string }[] }).transactions)
+      .map((t) => t.id);
+    expect(written).not.toContain('before-first-month');
+  });
+
+  it('skips a check 5 transaction that gains a memo in YNAB before check 5 runs', async () => {
+    const transactions = seed();
+    const memoLess = transactions.filter((t) => t.memo === null).map((t) => t.id);
+    const { fake } = setup(transactions);
+    let edited = false;
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const response = await fake.fetchImpl(input, init);
+      if (init?.method === 'PATCH' && !edited) {
+        edited = true;
+        for (const id of memoLess) fake.externalEdit('plan-1', id, 'added in YNAB');
+      }
+      return response;
+    };
+    const run = await runContractChecks({ pat: PAT, planId: 'plan-1', fetchImpl, now });
+    expect(run.results.find((r) => r.id === 5)?.outcome).toBe('inconclusive');
+    for (const id of memoLess)
+      expect(fake.getTransaction('plan-1', id)?.memo, id).toBe('added in YNAB');
+    expect(run.unrestored).toEqual([]);
+  });
+
   it('leaves the marker only while the checks run', async () => {
     const { fake } = setup();
     await runContractChecks({ pat: PAT, planId: 'plan-1', fetchImpl: fake.fetchImpl, now });
