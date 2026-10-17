@@ -269,6 +269,9 @@ export function planSeed(scenario: Scenario, options: SeedOptions): SeedPlan {
       if (sum !== t.amount) invalid.push(`${where} split lines sum to ${sum}, not ${t.amount}.`);
       if (account && isTracking(account.type)) invalid.push(`${where} splits a tracking account.`);
       for (const l of t.lines) {
+        if (!Number.isInteger(l.amount)) {
+          invalid.push(`${where} line amount ${l.amount} is not whole milliunits.`);
+        }
         if (l.memo !== undefined && codePoints(l.memo) > 500)
           invalid.push(`${where} line memo > 500.`);
       }
