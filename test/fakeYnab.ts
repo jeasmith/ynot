@@ -256,6 +256,12 @@ function errorBody(id: string, name: string, detail: string) {
 
 const codePoints = (s: string) => Array.from(s).length;
 
+function oneYearAgo(): string {
+  const d = new Date();
+  d.setUTCFullYear(d.getUTCFullYear() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 // ---------------------------------------------------------------------------------------------
 // The fake
 // ---------------------------------------------------------------------------------------------
@@ -335,7 +341,8 @@ export function createFakeYnab(options: FakeYnabOptions = {}): FakeYnab {
   function listTransactions(p: PlanState, query: Record<string, string>) {
     const last = query['last_knowledge_of_server'];
     const isDelta = last !== undefined;
-    const since = query['since_date'];
+    // Like YNAB, a missing since_date means one year ago, not the whole history.
+    const since = query['since_date'] ?? oneYearAgo();
     const items: TransactionDetail[] = [];
     for (const { value, changedAt } of p.transactions.values()) {
       if (isDelta ? changedAt <= Number(last) : value.deleted) continue;
