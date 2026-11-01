@@ -546,7 +546,7 @@ export function planDelete(state: DomainState, identity: TagIdentity): Operation
 export function planUndo(state: DomainState, source: UndoSlot): OperationPlan;
 export function replan(state: DomainState, request: PlanRequest): OperationPlan;
 export function planDiffers(a: OperationPlan, b: OperationPlan): boolean; // kind, change IDs, befores, afters, exclusions
-export function recheck(change: PlannedChange, request: PlanRequest, current: Transaction | undefined, state: DomainState):
+export function recheck(change: PlannedChange, request: PlanRequest, current: Transaction | undefined):
   'ok' | 'gone' | 'memoChanged' | 'replanDiffers';
 ```
 
@@ -558,7 +558,7 @@ export function recheck(change: PlannedChange, request: PlanRequest, current: Tr
 - **`recheck`** compares the re-read transaction against the confirmed change (Req 17.1–17.3):
   - `gone` if it was deleted;
   - `memoChanged` if its memo ≠ `before`;
-  - `replanDiffers` if planning `request` for this one transaction against the current state gives a different `after`, or excludes it.
+  - `replanDiffers` if planning `request` against the re-read transaction gives a different `after`, or excludes it.
 
   Account moves, amount edits and other field changes do not block a write unless they change the planned `after` (Req 17.4).
 
